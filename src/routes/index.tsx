@@ -39,6 +39,8 @@ export const Route = createFileRoute("/")({
 function Index() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [openHire, setOpenHire] = useState(false);
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -51,6 +53,14 @@ function Index() {
   async function handleLogout() {
     await supabase.auth.signOut();
     navigate({ to: "/" });
+  }
+
+  function handleSubmitPrompt() {
+    if (!user) {
+      navigate({ to: "/auth" });
+      return;
+    }
+    setOpenHire(true);
   }
 
   const initial = (user?.email ?? "V").charAt(0).toUpperCase();
@@ -88,6 +98,12 @@ function Index() {
         <div className="flex items-center gap-3">
           {user ? (
             <>
+              <Link
+                to="/workforce"
+                className="flex items-center gap-2 rounded-full bg-white/90 px-4 py-2.5 text-sm font-bold text-foreground shadow-sm hover:bg-white"
+              >
+                <Briefcase className="h-4 w-4" /> Workforce
+              </Link>
               <button className="rounded-full bg-[var(--brand-yellow)] px-5 py-2.5 text-sm font-bold text-foreground shadow-sm transition hover:brightness-105">
                 Buy Credits
               </button>
@@ -163,7 +179,10 @@ function Index() {
 
         {/* AI Employee tab */}
         <div className="mt-12 w-full max-w-3xl">
-          <button className="flex w-full items-center justify-center gap-2 rounded-t-2xl bg-white/90 px-4 py-4 text-base font-semibold text-foreground shadow-md">
+          <button
+            onClick={handleSubmitPrompt}
+            className="flex w-full items-center justify-center gap-2 rounded-t-2xl bg-white/90 px-4 py-4 text-base font-semibold text-foreground shadow-md hover:bg-white"
+          >
             <Bot className="h-5 w-5" />
             AI Employee
           </button>
@@ -172,7 +191,15 @@ function Index() {
         {/* Prompt box */}
         <div className="w-full max-w-3xl rounded-3xl rounded-t-none border border-sky-200 bg-white/90 p-5 shadow-xl backdrop-blur">
           <textarea
-            placeholder="Ask your AI employee anything..."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmitPrompt();
+              }
+            }}
+            placeholder="Describe the AI employee you need… e.g. 'lead scraper for NYC real estate'"
             rows={4}
             className="w-full resize-none bg-transparent text-lg text-foreground placeholder:text-foreground/30 focus:outline-none"
           />
@@ -201,7 +228,10 @@ function Index() {
               <IconBtn>
                 <Mic className="h-5 w-5" />
               </IconBtn>
-              <button className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/10 text-foreground transition hover:bg-foreground hover:text-white">
+              <button
+                onClick={handleSubmitPrompt}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/10 text-foreground transition hover:bg-foreground hover:text-white"
+              >
                 <ArrowUp className="h-5 w-5" />
               </button>
             </div>
@@ -210,12 +240,19 @@ function Index() {
 
         {/* Suggestions */}
         <div className="mb-16 mt-6 flex flex-wrap justify-center gap-3">
-          <Suggestion icon="🧑‍✈️" label="Wingman" beta />
-          <Suggestion icon={<Layers className="h-4 w-4" />} label="My Counter Part" />
-          <Suggestion icon={<Layers className="h-4 w-4" />} label="Bill Generator" />
-          <Suggestion icon={<Layers className="h-4 w-4" />} label="Word of the Day" />
+          <SuggestionBtn icon="🧑‍✈️" label="Wingman" onClick={() => { setPrompt("AI wingman to handle my dating outreach"); handleSubmitPrompt(); }} beta />
+          <SuggestionBtn icon={<Layers className="h-4 w-4" />} label="Lead Scraper" onClick={() => { setPrompt("Lead scraper for B2B SaaS founders"); handleSubmitPrompt(); }} />
+          <SuggestionBtn icon={<Layers className="h-4 w-4" />} label="Outreach Agent" onClick={() => { setPrompt("Cold email outreach specialist"); handleSubmitPrompt(); }} />
+          <SuggestionBtn icon={<Layers className="h-4 w-4" />} label="Scheduler" onClick={() => { setPrompt("Calendar scheduler that books meetings"); handleSubmitPrompt(); }} />
         </div>
       </main>
+
+      <HireArchitectModal
+        open={openHire}
+        initialPrompt={prompt}
+        onClose={() => setOpenHire(false)}
+        onHired={() => navigate({ to: "/workforce" })}
+      />
     </div>
   );
 }
