@@ -1,42 +1,57 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
-  AppWindow,
   MessageCircle,
   LayoutGrid,
   Gift,
   Bell,
   ChevronDown,
-  Layers,
-  Smartphone,
-  Globe,
+  Bot,
   Paperclip,
   Github,
   Sparkles,
   SlidersHorizontal,
   Mic,
   ArrowUp,
+  Globe,
+  LogOut,
+  Layers,
 } from "lucide-react";
 import skyImage from "@/assets/sky-clouds.jpg";
+import { supabase } from "@/integrations/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "Prince's Project — Where ideas become reality" },
+      { title: "Vnus Ai — Where ideas become reality" },
       {
         name: "description",
-        content:
-          "Build fully functional apps and websites through simple conversations.",
+        content: "Build fully functional apps and websites through simple conversations.",
       },
     ],
   }),
 });
 
-type TabKey = "fullstack" | "mobile" | "landing";
-
 function Index() {
-  const [tab, setTab] = useState<TabKey>("fullstack");
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null);
+    });
+    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    navigate({ to: "/" });
+  }
+
+  const initial = (user?.email ?? "V").charAt(0).toUpperCase();
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -53,13 +68,11 @@ function Index() {
       </div>
 
       {/* Top bar */}
-      <header className="flex items-center justify-between px-6 pt-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-2xl bg-white/90 px-4 py-2.5 shadow-sm backdrop-blur">
-            <AppWindow className="h-5 w-5 text-foreground" strokeWidth={2} />
-            <span className="text-[15px] font-semibold text-foreground">
-              App builder
-            </span>
+            <Sparkles className="h-5 w-5 text-orange-500" strokeWidth={2} />
+            <span className="text-[15px] font-semibold text-foreground">Vnus Ai</span>
           </div>
           <button className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm backdrop-blur">
             <MessageCircle className="h-5 w-5 text-foreground" />
@@ -71,18 +84,44 @@ function Index() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="rounded-full bg-[var(--brand-yellow)] px-5 py-2.5 text-sm font-bold text-foreground shadow-sm transition hover:brightness-105">
-            Buy Credits
-          </button>
-          <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
-            <Gift className="h-5 w-5 text-foreground" />
-          </button>
-          <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
-            <Bell className="h-5 w-5 text-foreground" />
-          </button>
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-teal-600 text-sm font-bold text-white shadow-sm">
-            P
-          </div>
+          {user ? (
+            <>
+              <button className="rounded-full bg-[var(--brand-yellow)] px-5 py-2.5 text-sm font-bold text-foreground shadow-sm transition hover:brightness-105">
+                Buy Credits
+              </button>
+              <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
+                <Gift className="h-5 w-5 text-foreground" />
+              </button>
+              <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
+                <Bell className="h-5 w-5 text-foreground" />
+              </button>
+              <button
+                onClick={handleLogout}
+                title="Logout"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm hover:bg-red-50"
+              >
+                <LogOut className="h-5 w-5 text-foreground" />
+              </button>
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-teal-600 text-sm font-bold text-white shadow-sm">
+                {initial}
+              </div>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/auth"
+                className="rounded-full bg-white/90 px-5 py-2.5 text-sm font-bold text-foreground shadow-sm transition hover:bg-white"
+              >
+                Login
+              </Link>
+              <Link
+                to="/auth"
+                className="rounded-full bg-foreground px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-110"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -108,7 +147,7 @@ function Index() {
         <button className="flex items-center gap-2 rounded-full bg-white/70 px-5 py-2.5 shadow-sm backdrop-blur">
           <span className="inline-block h-5 w-5 rounded-full bg-gradient-to-br from-pink-400 via-purple-400 to-blue-400" />
           <span className="text-[15px] font-semibold text-foreground">
-            Prince's Project
+            {user ? `${user.email?.split("@")[0]}'s Project` : "Vnus Ai"}
           </span>
           <ChevronDown className="h-4 w-4 text-foreground/70" />
         </button>
@@ -120,33 +159,32 @@ function Index() {
           Build fully functional apps and websites through simple conversations
         </p>
 
-        {/* Tabs */}
-        <div className="mt-12 flex w-full max-w-3xl gap-2">
-          <TabButton active={tab === "fullstack"} onClick={() => setTab("fullstack")} icon={<Layers className="h-5 w-5" />} label="Full Stack App" />
-          <TabButton active={tab === "mobile"} onClick={() => setTab("mobile")} icon={<Smartphone className="h-5 w-5" />} label="Mobile App" />
-          <TabButton active={tab === "landing"} onClick={() => setTab("landing")} icon={<AppWindow className="h-5 w-5" />} label="Landing Page" />
+        {/* AI Employee tab */}
+        <div className="mt-12 w-full max-w-3xl">
+          <button className="flex w-full items-center justify-center gap-2 rounded-t-2xl bg-white/90 px-4 py-4 text-base font-semibold text-foreground shadow-md">
+            <Bot className="h-5 w-5" />
+            AI Employee
+          </button>
         </div>
 
         {/* Prompt box */}
-        <div className="mt-2 w-full max-w-3xl rounded-3xl border border-sky-200 bg-white/90 p-5 shadow-xl backdrop-blur">
+        <div className="w-full max-w-3xl rounded-3xl rounded-t-none border border-sky-200 bg-white/90 p-5 shadow-xl backdrop-blur">
           <textarea
-            placeholder={
-              tab === "fullstack"
-                ? "Build me a SaaS app for..."
-                : tab === "mobile"
-                ? "Build me a mobile app for..."
-                : "Build me a landing page for..."
-            }
+            placeholder="Ask your AI employee anything..."
             rows={4}
             className="w-full resize-none bg-transparent text-lg text-foreground placeholder:text-foreground/30 focus:outline-none"
           />
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <IconBtn><Paperclip className="h-5 w-5" /></IconBtn>
-              <IconBtn><Github className="h-5 w-5" /></IconBtn>
+              <IconBtn>
+                <Paperclip className="h-5 w-5" />
+              </IconBtn>
+              <IconBtn>
+                <Github className="h-5 w-5" />
+              </IconBtn>
               <button className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground">
                 <Sparkles className="h-4 w-4 text-orange-500" />
-                Claude 4.7 Opus
+                Vnus ai
                 <ChevronDown className="h-4 w-4" />
               </button>
             </div>
@@ -155,8 +193,12 @@ function Index() {
                 <Globe className="h-4 w-4" />
                 Public
               </button>
-              <IconBtn><SlidersHorizontal className="h-5 w-5" /></IconBtn>
-              <IconBtn><Mic className="h-5 w-5" /></IconBtn>
+              <IconBtn>
+                <SlidersHorizontal className="h-5 w-5" />
+              </IconBtn>
+              <IconBtn>
+                <Mic className="h-5 w-5" />
+              </IconBtn>
               <button className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/10 text-foreground transition hover:bg-foreground hover:text-white">
                 <ArrowUp className="h-5 w-5" />
               </button>
@@ -173,32 +215,6 @@ function Index() {
         </div>
       </main>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-t-2xl px-4 py-4 text-base font-semibold transition ${
-        active
-          ? "bg-white/90 text-foreground shadow-md"
-          : "bg-sky-200/60 text-foreground/70 hover:bg-sky-200/80"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 
