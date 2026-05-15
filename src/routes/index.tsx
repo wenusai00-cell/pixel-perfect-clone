@@ -265,17 +265,22 @@ function IconBtn({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Suggestion({
+function SuggestionBtn({
   icon,
   label,
   beta,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   beta?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <button className="flex items-center gap-2 rounded-2xl bg-white/80 px-5 py-3 text-sm font-semibold text-foreground shadow-sm backdrop-blur transition hover:bg-white">
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 rounded-2xl bg-white/80 px-5 py-3 text-sm font-semibold text-foreground shadow-sm backdrop-blur transition hover:bg-white"
+    >
       <span className="flex items-center">{icon}</span>
       {label}
       {beta && (
