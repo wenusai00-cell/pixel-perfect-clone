@@ -14,7 +14,86 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      employee_permissions: {
+        Row: {
+          created_at: string
+          employee_id: string
+          granted: boolean
+          granted_at: string | null
+          id: string
+          permission_key: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          employee_id: string
+          granted?: boolean
+          granted_at?: string | null
+          id?: string
+          permission_key: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          employee_id?: string
+          granted?: boolean
+          granted_at?: string | null
+          id?: string
+          permission_key?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_permissions_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "user_employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_employees: {
+        Row: {
+          avatar_emoji: string | null
+          created_at: string
+          current_task: string | null
+          description: string | null
+          id: string
+          role_title: string
+          salary: number
+          skills: Json
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_emoji?: string | null
+          created_at?: string
+          current_task?: string | null
+          description?: string | null
+          id?: string
+          role_title: string
+          salary?: number
+          skills?: Json
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_emoji?: string | null
+          created_at?: string
+          current_task?: string | null
+          description?: string | null
+          id?: string
+          role_title?: string
+          salary?: number
+          skills?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
