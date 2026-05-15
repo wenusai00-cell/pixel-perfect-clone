@@ -16,10 +16,12 @@ import {
   Globe,
   LogOut,
   Layers,
+  Briefcase,
 } from "lucide-react";
 import skyImage from "@/assets/sky-clouds.jpg";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { HireArchitectModal } from "@/components/HireArchitectModal";
 
 export const Route = createFileRoute("/")({
   component: Index,
