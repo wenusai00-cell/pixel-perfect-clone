@@ -16,9 +16,9 @@ type Candidate = {
 };
 
 const PERMS = [
-  { key: "google_maps" as const, label: "Google Maps", sub: "for Lead Scraping", Icon: MapPin },
-  { key: "gmail" as const, label: "Email / Gmail", sub: "for Sending Outbound", Icon: Mail },
-  { key: "calendar" as const, label: "Calendar", sub: "for Scheduling", Icon: Calendar },
+  { key: "google_maps" as const, label: "Connect Google Maps", sub: "So I can scrape leads in your target areas", Icon: MapPin },
+  { key: "gmail" as const, label: "Connect your Gmail", sub: "So I can send outreach on your behalf", Icon: Mail },
+  { key: "calendar" as const, label: "Connect your Calendar", sub: "So I can book meetings automatically", Icon: Calendar },
 ];
 
 export function HireArchitectModal({
