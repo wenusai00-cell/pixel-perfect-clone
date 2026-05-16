@@ -41,12 +41,35 @@ function Index() {
   const [user, setUser] = useState<User | null>(null);
   const [prompt, setPrompt] = useState("");
   const [openHire, setOpenHire] = useState(false);
+  const [employees, setEmployees] = useState<
+    Array<{
+      id: string;
+      role_title: string;
+      description: string | null;
+      avatar_emoji: string | null;
+      status: string;
+      current_task: string | null;
+    }>
+  >([]);
+
+  async function loadEmployees() {
+    const { data } = await supabase
+      .from("user_employees")
+      .select("id, role_title, description, avatar_emoji, status, current_task")
+      .order("created_at", { ascending: false });
+    if (data) setEmployees(data as any);
+  }
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
+      if (session?.user) loadEmployees();
+      else setEmployees([]);
     });
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+      if (data.session?.user) loadEmployees();
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
