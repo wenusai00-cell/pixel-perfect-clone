@@ -262,19 +262,62 @@ function Index() {
         </div>
 
         {/* Suggestions */}
-        <div className="mb-16 mt-6 flex flex-wrap justify-center gap-3">
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
           <SuggestionBtn icon="🧑‍✈️" label="Wingman" onClick={() => { setPrompt("AI wingman to handle my dating outreach"); handleSubmitPrompt(); }} beta />
           <SuggestionBtn icon={<Layers className="h-4 w-4" />} label="Lead Scraper" onClick={() => { setPrompt("Lead scraper for B2B SaaS founders"); handleSubmitPrompt(); }} />
           <SuggestionBtn icon={<Layers className="h-4 w-4" />} label="Outreach Agent" onClick={() => { setPrompt("Cold email outreach specialist"); handleSubmitPrompt(); }} />
           <SuggestionBtn icon={<Layers className="h-4 w-4" />} label="Scheduler" onClick={() => { setPrompt("Calendar scheduler that books meetings"); handleSubmitPrompt(); }} />
         </div>
+
+        {/* My AI Employees */}
+        {user && employees.length > 0 && (
+          <section className="mb-16 mt-12 w-full max-w-5xl text-left">
+            <div className="mb-3 flex items-center justify-between px-1">
+              <h2 className="text-xl font-bold text-foreground drop-shadow-sm">Your AI Employees</h2>
+              <Link to="/workforce" className="text-sm font-semibold text-foreground/70 hover:text-foreground">
+                View all →
+              </Link>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {employees.map((e) => (
+                <button
+                  key={e.id}
+                  onClick={() => navigate({ to: "/employee/$id", params: { id: e.id } })}
+                  className="group flex flex-col items-start rounded-3xl border border-white/60 bg-white/80 p-4 text-left shadow-md backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-lg"
+                >
+                  <div className="flex w-full items-start justify-between">
+                    <div className="text-3xl">{e.avatar_emoji ?? "🤖"}</div>
+                    {e.status === "active" ? (
+                      <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                        Pending
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="mt-2 text-base font-bold leading-tight">{e.role_title}</h3>
+                  {e.description && (
+                    <p className="mt-1 line-clamp-2 text-xs text-foreground/70">{e.description}</p>
+                  )}
+                  <span className="mt-3 text-xs font-semibold text-foreground/80 group-hover:text-foreground">
+                    Open chat →
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
       <HireArchitectModal
         open={openHire}
         initialPrompt={prompt}
         onClose={() => setOpenHire(false)}
-        onHired={() => navigate({ to: "/workforce" })}
+        onHired={() => {
+          loadEmployees();
+        }}
       />
     </div>
   );
