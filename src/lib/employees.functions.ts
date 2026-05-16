@@ -11,10 +11,76 @@ const CardSchema = z.object({
   description: z.string().min(1).max(200),
   skills: z.array(z.string().min(1).max(60)).min(3).max(8),
   salary: z.number().min(100).max(20000),
-  avatar_emoji: z.string().min(1).max(4),
+  avatar_emoji: z.string().min(1).max(16),
 });
 
 const ResponseSchema = z.object({ candidates: z.array(CardSchema).length(3) });
+
+function fallbackCandidates(prompt: string) {
+  const role = prompt.trim().slice(0, 42) || "Growth Operator";
+  return {
+    candidates: [
+      {
+        role_title: `Lead ${role}`,
+        description: `Finds qualified prospects, enriches data, and prepares outreach workflows.`,
+        skills: [
+          "Lead research",
+          "Data enrichment",
+          "CRM updates",
+          "Outreach planning",
+          "Market targeting",
+        ],
+        salary: 1800,
+        avatar_emoji: "🛰️",
+      },
+      {
+        role_title: `${role} Outreach Agent`,
+        description: `Writes personalized messages and manages follow-up sequences for warm replies.`,
+        skills: ["Cold email", "Personalization", "Follow-ups", "Inbox triage", "Reply handling"],
+        salary: 2400,
+        avatar_emoji: "✉️",
+      },
+      {
+        role_title: `Senior ${role} Strategist`,
+        description: `Builds repeatable acquisition systems with task logs and permission-based execution.`,
+        skills: ["Strategy", "Automation", "Lead scoring", "Calendar booking", "Reporting"],
+        salary: 3600,
+        avatar_emoji: "🧠",
+      },
+    ],
+  };
+}
+
+function normalizeResponse(parsed: unknown) {
+  const source = Array.isArray(parsed) ? parsed : (parsed as { candidates?: unknown })?.candidates;
+  if (!Array.isArray(source)) return null;
+
+  const candidates = source.slice(0, 3).map((item) => {
+    const card = item as Record<string, unknown>;
+    const rawSalary = card.salary ?? card.Salary ?? card.monthly_salary ?? 1800;
+    const salary =
+      typeof rawSalary === "number"
+        ? rawSalary
+        : Number(String(rawSalary).replace(/[^0-9.]/g, "")) || 1800;
+
+    return {
+      role_title: String(card.role_title ?? card.title ?? card.role ?? "AI Employee").slice(0, 80),
+      description: String(
+        card.description ?? card.summary ?? "A specialized AI employee for this role.",
+      ).slice(0, 200),
+      skills: Array.isArray(card.skills)
+        ? card.skills
+            .map((skill) => String(skill).slice(0, 60))
+            .filter(Boolean)
+            .slice(0, 8)
+        : ["Research", "Automation", "Execution", "Reporting"],
+      salary,
+      avatar_emoji: String(card.avatar_emoji ?? card.emoji ?? "🤖").slice(0, 16),
+    };
+  });
+
+  return { candidates };
+}
 
 export const generateEmployeeCandidates = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -27,13 +93,20 @@ export const generateEmployeeCandidates = createServerFn({ method: "POST" })
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-3-flash-preview");
 
-    const { text } = await generateText({
-      model,
-      system:
-        SYSTEM +
-        `\n\nReturn ONLY valid JSON, no markdown, no commentary. Shape: {"candidates":[{"role_title":string,"description":string,"skills":string[],"salary":number,"avatar_emoji":string}, ...3 total]}`,
-      prompt: `User request: "${data.prompt}". Return exactly 3 AI Employee candidates as JSON.`,
-    });
+    let text = "";
+    try {
+      const result = await generateText({
+        model,
+        system:
+          SYSTEM +
+          `\n\nReturn ONLY valid JSON, no markdown, no commentary. Shape: {"candidates":[{"role_title":string,"description":string,"skills":string[],"salary":number,"avatar_emoji":string}, ...3 total]}`,
+        prompt: `User request: "${data.prompt}". Return exactly 3 AI Employee candidates as JSON.`,
+      });
+      text = result.text;
+    } catch (error) {
+      console.warn("Employee architect AI generation failed, using safe fallback", error);
+      return fallbackCandidates(data.prompt);
+    }
 
     // Extract JSON from response (strip ```json fences if present)
     let jsonStr = text.trim();
@@ -49,12 +122,17 @@ export const generateEmployeeCandidates = createServerFn({ method: "POST" })
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
-      throw new Error("AI returned invalid JSON. Try again.");
+      return fallbackCandidates(data.prompt);
     }
 
-    const result = ResponseSchema.safeParse(parsed);
+    const normalized = normalizeResponse(parsed);
+    const result = ResponseSchema.safeParse(normalized);
     if (!result.success) {
-      throw new Error("AI response shape invalid. Try a different prompt.");
+      console.warn(
+        "Employee architect response failed validation, using safe fallback",
+        result.error.flatten(),
+      );
+      return fallbackCandidates(data.prompt);
     }
     return result.data;
   });
