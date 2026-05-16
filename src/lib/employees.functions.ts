@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
@@ -27,14 +27,36 @@ export const generateEmployeeCandidates = createServerFn({ method: "POST" })
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-3-flash-preview");
 
-    const { experimental_output } = await generateText({
+    const { text } = await generateText({
       model,
-      system: SYSTEM,
-      prompt: `User request: "${data.prompt}". Return exactly 3 AI Employee candidates.`,
-      experimental_output: Output.object({ schema: ResponseSchema }),
+      system:
+        SYSTEM +
+        `\n\nReturn ONLY valid JSON, no markdown, no commentary. Shape: {"candidates":[{"role_title":string,"description":string,"skills":string[],"salary":number,"avatar_emoji":string}, ...3 total]}`,
+      prompt: `User request: "${data.prompt}". Return exactly 3 AI Employee candidates as JSON.`,
     });
 
-    return experimental_output;
+    // Extract JSON from response (strip ```json fences if present)
+    let jsonStr = text.trim();
+    const fence = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) jsonStr = fence[1].trim();
+    const firstBrace = jsonStr.indexOf("{");
+    const lastBrace = jsonStr.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      throw new Error("AI returned invalid JSON. Try again.");
+    }
+
+    const result = ResponseSchema.safeParse(parsed);
+    if (!result.success) {
+      throw new Error("AI response shape invalid. Try a different prompt.");
+    }
+    return result.data;
   });
 
 export const hireEmployee = createServerFn({ method: "POST" })
