@@ -254,7 +254,7 @@ function PermissionStep({
                 <Icon className="h-5 w-5" />
               </div>
               <div className="flex-1">
-                <div className="text-sm font-bold">Access to {label}</div>
+                <div className="text-sm font-bold">{label}</div>
                 <div className="text-xs text-foreground/60">{sub}</div>
               </div>
               <div
