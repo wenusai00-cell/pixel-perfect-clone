@@ -16,9 +16,9 @@ type Candidate = {
 };
 
 const PERMS = [
-  { key: "google_maps" as const, label: "Google Maps", sub: "for Lead Scraping", Icon: MapPin },
-  { key: "gmail" as const, label: "Email / Gmail", sub: "for Sending Outbound", Icon: Mail },
-  { key: "calendar" as const, label: "Calendar", sub: "for Scheduling", Icon: Calendar },
+  { key: "google_maps" as const, label: "Connect Google Maps", sub: "So I can scrape leads in your target areas", Icon: MapPin },
+  { key: "gmail" as const, label: "Connect your Gmail", sub: "So I can send outreach on your behalf", Icon: Mail },
+  { key: "calendar" as const, label: "Connect your Calendar", sub: "So I can book meetings automatically", Icon: Calendar },
 ];
 
 export function HireArchitectModal({
@@ -224,9 +224,9 @@ function PermissionStep({
       <div className="flex items-center gap-3">
         <div className="text-3xl">{cand.avatar_emoji}</div>
         <div>
-          <h2 className="text-xl font-bold">Grant access to {cand.role_title}</h2>
+          <h2 className="text-xl font-bold">Your {cand.role_title} needs a few connections</h2>
           <p className="text-sm text-foreground/70">
-            Vnus AI uses internal system tools — you never need your own API keys.
+            Tap to connect — you'll never need to paste any API keys. Vnus AI handles the integration for you.
           </p>
         </div>
       </div>
@@ -254,7 +254,7 @@ function PermissionStep({
                 <Icon className="h-5 w-5" />
               </div>
               <div className="flex-1">
-                <div className="text-sm font-bold">Access to {label}</div>
+                <div className="text-sm font-bold">{label}</div>
                 <div className="text-xs text-foreground/60">{sub}</div>
               </div>
               <div
