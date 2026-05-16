@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkforceRouteImport } from './routes/workforce'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as EmployeeIdRouteImport } from './routes/employee.$id'
 
 const WorkforceRoute = WorkforceRouteImport.update({
   id: '/workforce',
@@ -28,35 +29,44 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EmployeeIdRoute = EmployeeIdRouteImport.update({
+  id: '/employee/$id',
+  path: '/employee/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/workforce': typeof WorkforceRoute
+  '/employee/$id': typeof EmployeeIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/workforce': typeof WorkforceRoute
+  '/employee/$id': typeof EmployeeIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/workforce': typeof WorkforceRoute
+  '/employee/$id': typeof EmployeeIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/workforce'
+  fullPaths: '/' | '/auth' | '/workforce' | '/employee/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/workforce'
-  id: '__root__' | '/' | '/auth' | '/workforce'
+  to: '/' | '/auth' | '/workforce' | '/employee/$id'
+  id: '__root__' | '/' | '/auth' | '/workforce' | '/employee/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   WorkforceRoute: typeof WorkforceRoute
+  EmployeeIdRoute: typeof EmployeeIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/employee/$id': {
+      id: '/employee/$id'
+      path: '/employee/$id'
+      fullPath: '/employee/$id'
+      preLoaderRoute: typeof EmployeeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   WorkforceRoute: WorkforceRoute,
+  EmployeeIdRoute: EmployeeIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
