@@ -224,9 +224,9 @@ function PermissionStep({
       <div className="flex items-center gap-3">
         <div className="text-3xl">{cand.avatar_emoji}</div>
         <div>
-          <h2 className="text-xl font-bold">Grant access to {cand.role_title}</h2>
+          <h2 className="text-xl font-bold">Your {cand.role_title} needs a few connections</h2>
           <p className="text-sm text-foreground/70">
-            Vnus AI uses internal system tools — you never need your own API keys.
+            Tap to connect — you'll never need to paste any API keys. Vnus AI handles the integration for you.
           </p>
         </div>
       </div>
