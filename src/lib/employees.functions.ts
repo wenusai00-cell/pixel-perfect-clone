@@ -23,7 +23,13 @@ function fallbackCandidates(prompt: string) {
       {
         role_title: `Lead ${role}`,
         description: `Finds qualified prospects, enriches data, and prepares outreach workflows.`,
-        skills: ["Lead research", "Data enrichment", "CRM updates", "Outreach planning", "Market targeting"],
+        skills: [
+          "Lead research",
+          "Data enrichment",
+          "CRM updates",
+          "Outreach planning",
+          "Market targeting",
+        ],
         salary: 1800,
         avatar_emoji: "🛰️",
       },
@@ -59,9 +65,14 @@ function normalizeResponse(parsed: unknown) {
 
     return {
       role_title: String(card.role_title ?? card.title ?? card.role ?? "AI Employee").slice(0, 80),
-      description: String(card.description ?? card.summary ?? "A specialized AI employee for this role.").slice(0, 200),
+      description: String(
+        card.description ?? card.summary ?? "A specialized AI employee for this role.",
+      ).slice(0, 200),
       skills: Array.isArray(card.skills)
-        ? card.skills.map((skill) => String(skill).slice(0, 60)).filter(Boolean).slice(0, 8)
+        ? card.skills
+            .map((skill) => String(skill).slice(0, 60))
+            .filter(Boolean)
+            .slice(0, 8)
         : ["Research", "Automation", "Execution", "Reporting"],
       salary,
       avatar_emoji: String(card.avatar_emoji ?? card.emoji ?? "🤖").slice(0, 16),
@@ -117,7 +128,10 @@ export const generateEmployeeCandidates = createServerFn({ method: "POST" })
     const normalized = normalizeResponse(parsed);
     const result = ResponseSchema.safeParse(normalized);
     if (!result.success) {
-      console.warn("Employee architect response failed validation, using safe fallback", result.error.flatten());
+      console.warn(
+        "Employee architect response failed validation, using safe fallback",
+        result.error.flatten(),
+      );
       return fallbackCandidates(data.prompt);
     }
     return result.data;
