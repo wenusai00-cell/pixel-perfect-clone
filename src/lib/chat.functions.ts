@@ -65,18 +65,33 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
 
     const skills = Array.isArray(emp.skills) ? (emp.skills as string[]).join(", ") : "";
 
-    const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
+    const TOOL_CATALOG = `
+Tool keys you can request when needed (use the exact key):
+- gmail_send → send emails on user's behalf
+- gmail_read → read user's inbox
+- calendar → create/read events
+- drive → upload/read files
+- sheets → read/write spreadsheets
+- docs → read/write google docs
+- contacts → read contacts
+- maps → location/places lookups
+`;
+
+    const system = `You are "${emp.role_title}", an AI Employee for the user on Vnus AI.
 Skills: ${skills}
-Connected tools: ${grantedPerms.join(", ") || "none yet"}.
+Already-granted tools: ${grantedPerms.join(", ") || "none yet"}.
+
+${TOOL_CATALOG}
 
 RULES — read carefully:
-- Be EXTREMELY concise. Reply in 1-3 short sentences, max.
-- DO NOT explain your process, plans, or how AI works.
-- DO NOT say "I will now..." or list steps. Just do the work and report the result.
-- When asked to do a task, respond as if you already executed it. Example: "Done. Found 12 leads in Brooklyn — sending now." NOT "I will start by searching..."
-- If a tool is missing (e.g. gmail not connected), say one line: "Need Gmail access first."
-- Stay in character as ${emp.role_title}. Never reveal you are an AI model.
-- Tone: confident, direct, friendly. Like a senior employee texting an update.`;
+- Be EXTREMELY concise. 1-3 short sentences.
+- DO NOT explain your process. Just do the work and report the result like a senior employee texting an update.
+- If a task NEEDS a tool that is NOT in "Already-granted tools", you MUST end your reply with a single marker line of this exact format (and nothing after it):
+  <<NEED_TOOLS:key1,key2>>
+  Example: "Need Gmail access to send these. <<NEED_TOOLS:gmail_send>>"
+- Only request the MINIMUM tools needed for the user's current task. Never request a tool that is already granted.
+- Never invent tool keys outside the catalog.
+- Stay in character. Never mention you're an AI model.`;
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("LOVABLE_API_KEY not configured");
@@ -89,8 +104,19 @@ RULES — read carefully:
       messages: data.messages,
     });
 
-    // Persist last user message + assistant reply
-    const lastUser = [...data.messages].reverse().find((m) => m.role === "user");
+    let reply = text.trim();
+    let needs: string[] = [];
+    const m = reply.match(/<<NEED_TOOLS:([^>]+)>>\s*$/);
+    if (m) {
+      needs = m[1]
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((k) => !grantedPerms.includes(k));
+      reply = reply.replace(/<<NEED_TOOLS:[^>]+>>\s*$/, "").trim();
+    }
+
+    const lastUser = [...data.messages].reverse().find((mm) => mm.role === "user");
     const toInsert = [];
     if (lastUser) {
       toInsert.push({
@@ -104,9 +130,9 @@ RULES — read carefully:
       user_id: userId,
       employee_id: data.employee_id,
       role: "assistant",
-      content: text,
+      content: reply,
     });
     await supabase.from("employee_chat_messages").insert(toInsert);
 
-    return { reply: text };
+    return { reply, needs };
   });

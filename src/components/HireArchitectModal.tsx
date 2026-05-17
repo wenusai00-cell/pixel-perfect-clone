@@ -80,8 +80,9 @@ export function HireArchitectModal({
     setLoading(true);
     setError(null);
     try {
-      const row = await hire({ data: c });
-      setPermFor({ id: row.id, cand: c });
+      await hire({ data: c });
+      onHired();
+      onClose();
     } catch (e: any) {
       setError(e?.message ?? "Failed to hire");
     } finally {

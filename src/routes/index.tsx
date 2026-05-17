@@ -110,11 +110,17 @@ function Index() {
     try {
       const pending = JSON.parse(raw) as {
         employee_id: string;
-        permissions: Array<"google_maps" | "gmail" | "calendar">;
+        permissions: string[];
+        return_to?: string;
       };
       if (pending?.employee_id && pending?.permissions?.length) {
-        await grant({ data: pending });
+        await grant({
+          data: { employee_id: pending.employee_id, permissions: pending.permissions },
+        });
         await loadEmployees();
+        if (pending.return_to) {
+          navigate({ to: pending.return_to });
+        }
       }
     } catch (e) {
       console.error("Failed to complete pending grant", e);
