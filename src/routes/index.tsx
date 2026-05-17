@@ -22,6 +22,27 @@ import skyImage from "@/assets/sky-clouds.jpg";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { HireArchitectModal } from "@/components/HireArchitectModal";
+import { useServerFn } from "@tanstack/react-start";
+import { grantPermissions } from "@/lib/employees.functions";
+
+const PENDING_KEY = "vnus_pending_grant";
+
+const PARTNERS = [
+  { name: "Gmail", emoji: "📧" },
+  { name: "Google Calendar", emoji: "📅" },
+  { name: "Google Maps", emoji: "🗺️" },
+  { name: "Google Drive", emoji: "📂" },
+  { name: "Google Sheets", emoji: "📊" },
+  { name: "Slack", emoji: "💬" },
+  { name: "Notion", emoji: "📝" },
+  { name: "HubSpot", emoji: "🎯" },
+  { name: "Airtable", emoji: "🗃️" },
+  { name: "Linear", emoji: "📐" },
+  { name: "Outlook", emoji: "📨" },
+  { name: "Stripe", emoji: "💳" },
+  { name: "Twilio", emoji: "📞" },
+  { name: "OpenAI", emoji: "✨" },
+];
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -60,18 +81,45 @@ function Index() {
     if (data) setEmployees(data as any);
   }
 
+  const grant = useServerFn(grantPermissions);
+
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) loadEmployees();
-      else setEmployees([]);
+      if (session?.user) {
+        loadEmployees();
+        completePendingGrant();
+      } else setEmployees([]);
     });
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
-      if (data.session?.user) loadEmployees();
+      if (data.session?.user) {
+        loadEmployees();
+        completePendingGrant();
+      }
     });
     return () => sub.subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function completePendingGrant() {
+    if (typeof window === "undefined") return;
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return;
+    localStorage.removeItem(PENDING_KEY);
+    try {
+      const pending = JSON.parse(raw) as {
+        employee_id: string;
+        permissions: Array<"google_maps" | "gmail" | "calendar">;
+      };
+      if (pending?.employee_id && pending?.permissions?.length) {
+        await grant({ data: pending });
+        await loadEmployees();
+      }
+    } catch (e) {
+      console.error("Failed to complete pending grant", e);
+    }
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut();
