@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowUp, Loader2, Sparkles, Activity } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import skyImage from "@/assets/sky-clouds.jpg";
-import { chatWithEmployee } from "@/lib/chat.functions";
+import { chatWithEmployee, loadChatHistory } from "@/lib/chat.functions";
 
 export const Route = createFileRoute("/employee/$id")({
   component: EmployeeChatPage,
@@ -26,6 +26,7 @@ function EmployeeChatPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
   const chat = useServerFn(chatWithEmployee);
+  const loadHistory = useServerFn(loadChatHistory);
 
   const [emp, setEmp] = useState<Employee | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -48,15 +49,29 @@ function EmployeeChatPage() {
         .single();
       if (data) {
         setEmp(data as any);
-        setMessages([
-          {
-            role: "assistant",
-            content: `Hi — I'm your ${data.role_title} ${data.avatar_emoji ?? "🤖"}. What would you like me to work on?`,
-          },
-        ]);
+        try {
+          const { messages: history } = await loadHistory({ data: { employee_id: id } });
+          if (history.length > 0) {
+            setMessages(history);
+          } else {
+            setMessages([
+              {
+                role: "assistant",
+                content: `Hey — ${data.role_title} here ${data.avatar_emoji ?? "🤖"}. What's the task?`,
+              },
+            ]);
+          }
+        } catch {
+          setMessages([
+            {
+              role: "assistant",
+              content: `Hey — ${data.role_title} here. What's the task?`,
+            },
+          ]);
+        }
       }
     })();
-  }, [id, navigate]);
+  }, [id, navigate, loadHistory]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
