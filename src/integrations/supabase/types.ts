@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      employee_chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          employee_id: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          employee_id: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          employee_id?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       employee_permissions: {
         Row: {
           created_at: string
