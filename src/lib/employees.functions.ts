@@ -162,7 +162,8 @@ export const hireEmployee = createServerFn({ method: "POST" })
         skills: data.skills,
         salary: data.salary,
         avatar_emoji: data.avatar_emoji ?? "🤖",
-        status: "pending",
+        status: "active",
+        current_task: "Ready — waiting for your first task",
       })
       .select()
       .single();
