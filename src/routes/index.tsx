@@ -359,6 +359,33 @@ function Index() {
         )}
       </main>
 
+      {/* Our Partners — integrations we can connect to */}
+      <section className="mt-8 w-full overflow-hidden pb-16">
+        <div className="mb-5 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-foreground/50">
+            Our Partners
+          </p>
+          <h2 className="mt-1 text-2xl font-bold text-foreground">
+            Your AI Employees plug into the tools you already use
+          </h2>
+        </div>
+        <div className="relative">
+          <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-24 bg-gradient-to-r from-white to-transparent" />
+          <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-24 bg-gradient-to-l from-white to-transparent" />
+          <div className="flex w-max animate-marquee gap-4">
+            {[...PARTNERS, ...PARTNERS].map((p, i) => (
+              <div
+                key={`${p.name}-${i}`}
+                className="flex shrink-0 items-center gap-3 rounded-2xl border border-white/60 bg-white/80 px-5 py-3 shadow-sm backdrop-blur-xl"
+              >
+                <span className="text-2xl">{p.emoji}</span>
+                <span className="text-sm font-bold text-foreground">{p.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <HireArchitectModal
         open={openHire}
         initialPrompt={prompt}
