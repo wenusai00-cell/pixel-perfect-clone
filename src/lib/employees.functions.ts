@@ -176,7 +176,7 @@ export const grantPermissions = createServerFn({ method: "POST" })
     z
       .object({
         employee_id: z.string().uuid(),
-        permissions: z.array(z.enum(["google_maps", "gmail", "calendar"])).min(1),
+        permissions: z.array(z.string().min(1).max(80)).min(1).max(10),
       })
       .parse(input),
   )
@@ -196,17 +196,9 @@ export const grantPermissions = createServerFn({ method: "POST" })
       .upsert(rows, { onConflict: "employee_id,permission_key" });
     if (pErr) throw new Error(pErr.message);
 
-    // Activate the employee with a starting simulated task
-    const taskMap: Record<string, string> = {
-      google_maps: "Scraping leads in New York…",
-      gmail: "Drafting personalized outreach emails…",
-      calendar: "Scheduling discovery calls for next week…",
-    };
-    const firstTask = taskMap[data.permissions[0]] ?? "Initializing…";
-
     const { error: uErr } = await supabase
       .from("user_employees")
-      .update({ status: "active", current_task: firstTask })
+      .update({ status: "active" })
       .eq("id", data.employee_id)
       .eq("user_id", userId);
     if (uErr) throw new Error(uErr.message);
