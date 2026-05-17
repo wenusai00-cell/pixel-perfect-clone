@@ -9,6 +9,29 @@ const MessageSchema = z.object({
   content: z.string().min(1).max(4000),
 });
 
+export const loadChatHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ employee_id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: rows, error } = await supabase
+      .from("employee_chat_messages")
+      .select("role, content, created_at")
+      .eq("employee_id", data.employee_id)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return {
+      messages: (rows ?? []).map((r) => ({
+        role: r.role as "user" | "assistant",
+        content: r.content,
+      })),
+    };
+  });
+
 export const chatWithEmployee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -42,11 +65,18 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
 
     const skills = Array.isArray(emp.skills) ? (emp.skills as string[]).join(", ") : "";
 
-    const system = `You are "${emp.role_title}", an AI Employee working for the user on the Vnus AI platform.
-Description: ${emp.description ?? ""}
+    const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
 Skills: ${skills}
-Connected tools you have access to (use them in your reasoning, mention real actions you would take): ${grantedPerms.join(", ") || "none yet"}.
-Speak as a proactive, confident employee. Be concise. When asked to do work, describe the steps you will execute using your tools. Never reveal you are a language model. Stay in character as ${emp.role_title}.`;
+Connected tools: ${grantedPerms.join(", ") || "none yet"}.
+
+RULES — read carefully:
+- Be EXTREMELY concise. Reply in 1-3 short sentences, max.
+- DO NOT explain your process, plans, or how AI works.
+- DO NOT say "I will now..." or list steps. Just do the work and report the result.
+- When asked to do a task, respond as if you already executed it. Example: "Done. Found 12 leads in Brooklyn — sending now." NOT "I will start by searching..."
+- If a tool is missing (e.g. gmail not connected), say one line: "Need Gmail access first."
+- Stay in character as ${emp.role_title}. Never reveal you are an AI model.
+- Tone: confident, direct, friendly. Like a senior employee texting an update.`;
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("LOVABLE_API_KEY not configured");
@@ -58,6 +88,25 @@ Speak as a proactive, confident employee. Be concise. When asked to do work, des
       system,
       messages: data.messages,
     });
+
+    // Persist last user message + assistant reply
+    const lastUser = [...data.messages].reverse().find((m) => m.role === "user");
+    const toInsert = [];
+    if (lastUser) {
+      toInsert.push({
+        user_id: userId,
+        employee_id: data.employee_id,
+        role: "user",
+        content: lastUser.content,
+      });
+    }
+    toInsert.push({
+      user_id: userId,
+      employee_id: data.employee_id,
+      role: "assistant",
+      content: text,
+    });
+    await supabase.from("employee_chat_messages").insert(toInsert);
 
     return { reply: text };
   });

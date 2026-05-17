@@ -4,7 +4,7 @@ import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
-const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards. Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a numeric monthly salary in USD (between 800 and 5000), and a single emoji avatar. Make each of the 3 cards meaningfully different (e.g. junior/mid/senior, or different specializations).`;
+const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards. Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a BALANCED monthly salary in USD between 199 and 899 (keep it affordable — these are AI employees, not humans), and a single emoji avatar. Make each of the 3 cards meaningfully different — junior/mid/senior tiers with proportional pricing (e.g. 199, 449, 799).`;
 
 const CardSchema = z.object({
   role_title: z.string().min(1).max(80),
@@ -30,21 +30,21 @@ function fallbackCandidates(prompt: string) {
           "Outreach planning",
           "Market targeting",
         ],
-        salary: 1800,
+        salary: 199,
         avatar_emoji: "🛰️",
       },
       {
         role_title: `${role} Outreach Agent`,
         description: `Writes personalized messages and manages follow-up sequences for warm replies.`,
         skills: ["Cold email", "Personalization", "Follow-ups", "Inbox triage", "Reply handling"],
-        salary: 2400,
+        salary: 449,
         avatar_emoji: "✉️",
       },
       {
         role_title: `Senior ${role} Strategist`,
         description: `Builds repeatable acquisition systems with task logs and permission-based execution.`,
         skills: ["Strategy", "Automation", "Lead scoring", "Calendar booking", "Reporting"],
-        salary: 3600,
+        salary: 799,
         avatar_emoji: "🧠",
       },
     ],
@@ -57,11 +57,12 @@ function normalizeResponse(parsed: unknown) {
 
   const candidates = source.slice(0, 3).map((item) => {
     const card = item as Record<string, unknown>;
-    const rawSalary = card.salary ?? card.Salary ?? card.monthly_salary ?? 1800;
-    const salary =
+    const rawSalary = card.salary ?? card.Salary ?? card.monthly_salary ?? 449;
+    let salary =
       typeof rawSalary === "number"
         ? rawSalary
-        : Number(String(rawSalary).replace(/[^0-9.]/g, "")) || 1800;
+        : Number(String(rawSalary).replace(/[^0-9.]/g, "")) || 449;
+    if (salary > 899) salary = Math.min(899, Math.round(salary / 4));
 
     return {
       role_title: String(card.role_title ?? card.title ?? card.role ?? "AI Employee").slice(0, 80),
