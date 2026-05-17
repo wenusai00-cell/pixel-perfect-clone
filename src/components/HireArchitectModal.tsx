@@ -6,6 +6,8 @@ import {
   hireEmployee,
   grantPermissions,
 } from "@/lib/employees.functions";
+import { lovable } from "@/integrations/lovable";
+import { supabase } from "@/integrations/supabase/client";
 
 type Candidate = {
   role_title: string;
@@ -15,11 +17,20 @@ type Candidate = {
   avatar_emoji: string;
 };
 
+const GOOGLE_SCOPES: Record<string, string> = {
+  google_maps: "openid email profile",
+  gmail:
+    "openid email profile https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly",
+  calendar: "openid email profile https://www.googleapis.com/auth/calendar.events",
+};
+
 const PERMS = [
   { key: "google_maps" as const, label: "Connect Google Maps", sub: "So I can scrape leads in your target areas", Icon: MapPin },
   { key: "gmail" as const, label: "Connect your Gmail", sub: "So I can send outreach on your behalf", Icon: Mail },
   { key: "calendar" as const, label: "Connect your Calendar", sub: "So I can book meetings automatically", Icon: Calendar },
 ];
+
+const PENDING_KEY = "vnus_pending_grant";
 
 export function HireArchitectModal({
   open,
@@ -208,12 +219,39 @@ function PermissionStep({
     setPhase("connecting");
     setError(null);
     try {
-      // Simulated OAuth animation
-      await new Promise((r) => setTimeout(r, 1200));
+      // Build the combined Google scope set for chosen permissions
+      const scopeSet = new Set<string>(["openid", "email", "profile"]);
+      chosen.forEach((k) => {
+        GOOGLE_SCOPES[k].split(/\s+/).forEach((s) => scopeSet.add(s));
+      });
+      const scope = Array.from(scopeSet).join(" ");
+
+      // Store pending grant so we can complete it after OAuth redirect
+      localStorage.setItem(
+        PENDING_KEY,
+        JSON.stringify({ employee_id: employeeId, permissions: chosen }),
+      );
+
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
+        extraParams: {
+          scope,
+          access_type: "offline",
+          prompt: "consent",
+          include_granted_scopes: "true",
+        },
+      });
+
+      if (result.error) throw result.error;
+      if (result.redirected) return; // browser navigates to Google; modal will reopen via PendingGrantHandler
+
+      // Same-tab token return path
       await grant({ data: { employee_id: employeeId, permissions: chosen } });
+      localStorage.removeItem(PENDING_KEY);
       setPhase("done");
       setTimeout(onDone, 900);
     } catch (e: any) {
+      localStorage.removeItem(PENDING_KEY);
       setError(e?.message ?? "Failed to grant access");
       setPhase("choose");
     }
