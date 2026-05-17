@@ -264,7 +264,7 @@ function PermissionStep({
         <div>
           <h2 className="text-xl font-bold">Your {cand.role_title} needs a few connections</h2>
           <p className="text-sm text-foreground/70">
-            Tap to connect — you'll never need to paste any API keys. Vnus AI handles the integration for you.
+            You'll be redirected to Google to sign in and approve the exact access I need. No API keys, no copy-paste.
           </p>
         </div>
       </div>
@@ -309,7 +309,7 @@ function PermissionStep({
 
       <div className="mt-5 flex items-center gap-2 rounded-xl bg-sky-50/80 px-3 py-2 text-xs text-sky-900">
         <Shield className="h-4 w-4" />
-        Permissions are stored securely. Connections use Vnus internal tools.
+        Real Google OAuth. You approve each scope directly with Google.
       </div>
 
       {error && (
