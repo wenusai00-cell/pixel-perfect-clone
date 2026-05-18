@@ -1,18 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowUp, Loader2, Sparkles, Activity, Shield, Check } from "lucide-react";
-import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useState } from "react";
+import { ArrowLeft, Sparkles, Activity, Clock, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import skyImage from "@/assets/sky-clouds.jpg";
-import { chatWithEmployee, loadChatHistory } from "@/lib/chat.functions";
-import { lovable } from "@/integrations/lovable";
 
 export const Route = createFileRoute("/employee/$id")({
-  component: EmployeeChatPage,
-  head: () => ({ meta: [{ title: "AI Employee Chat — Vnus Ai" }] }),
+  component: EmployeeProfilePage,
+  head: () => ({ meta: [{ title: "AI Employee — Vnus Ai" }] }),
 });
 
-type Msg = { role: "user" | "assistant"; content: string; needs?: string[] };
 type Employee = {
   id: string;
   role_title: string;
@@ -21,59 +17,14 @@ type Employee = {
   avatar_emoji: string | null;
   status: string;
   current_task: string | null;
+  salary: number;
 };
 
-// Tool key → human label + exact Google OAuth scope
-const TOOL_SPECS: Record<string, { label: string; scope: string }> = {
-  gmail_send: {
-    label: "Gmail (send)",
-    scope: "openid email profile https://www.googleapis.com/auth/gmail.send",
-  },
-  gmail_read: {
-    label: "Gmail (read inbox)",
-    scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
-  },
-  calendar: {
-    label: "Google Calendar",
-    scope: "openid email profile https://www.googleapis.com/auth/calendar.events",
-  },
-  drive: {
-    label: "Google Drive",
-    scope: "openid email profile https://www.googleapis.com/auth/drive.file",
-  },
-  sheets: {
-    label: "Google Sheets",
-    scope: "openid email profile https://www.googleapis.com/auth/spreadsheets",
-  },
-  docs: {
-    label: "Google Docs",
-    scope: "openid email profile https://www.googleapis.com/auth/documents",
-  },
-  contacts: {
-    label: "Google Contacts",
-    scope: "openid email profile https://www.googleapis.com/auth/contacts.readonly",
-  },
-  maps: {
-    label: "Google Maps / Places",
-    scope: "openid email profile",
-  },
-};
-
-const PENDING_KEY = "vnus_pending_grant";
-
-function EmployeeChatPage() {
+function EmployeeProfilePage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const chat = useServerFn(chatWithEmployee);
-  const loadHistory = useServerFn(loadChatHistory);
-
   const [emp, setEmp] = useState<Employee | null>(null);
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [connectingKey, setConnectingKey] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -87,95 +38,10 @@ function EmployeeChatPage() {
         .select("*")
         .eq("id", id)
         .single();
-      if (data) {
-        setEmp(data as any);
-        try {
-          const { messages: history } = await loadHistory({ data: { employee_id: id } });
-          if (history.length > 0) {
-            setMessages(history);
-          } else {
-            setMessages([
-              {
-                role: "assistant",
-                content: `Hey — ${data.role_title} here ${data.avatar_emoji ?? "🤖"}. What's the task?`,
-              },
-            ]);
-          }
-        } catch {
-          setMessages([
-            {
-              role: "assistant",
-              content: `Hey — ${data.role_title} here. What's the task?`,
-            },
-          ]);
-        }
-      }
+      if (data) setEmp(data as any);
+      setLoading(false);
     })();
-  }, [id, navigate, loadHistory]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, sending]);
-
-  async function send() {
-    const text = input.trim();
-    if (!text || sending) return;
-    const next: Msg[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
-    setInput("");
-    setSending(true);
-    setError(null);
-    try {
-      const { reply, needs } = await chat({
-        data: {
-          employee_id: id,
-          messages: next.map(({ role, content }) => ({ role, content })),
-        },
-      });
-      setMessages((m) => [...m, { role: "assistant", content: reply, needs: needs ?? [] }]);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to reach AI");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function connectTool(key: string) {
-    const spec = TOOL_SPECS[key];
-    if (!spec) return;
-    setConnectingKey(key);
-    setError(null);
-    try {
-      // Persist intent so the post-redirect handler on "/" can complete the grant
-      // and bounce back to this employee chat.
-      localStorage.setItem(
-        PENDING_KEY,
-        JSON.stringify({
-          employee_id: id,
-          permissions: [key],
-          return_to: `/employee/${id}`,
-        }),
-      );
-
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
-        extraParams: {
-          scope: spec.scope,
-          access_type: "offline",
-          prompt: "consent",
-          include_granted_scopes: "true",
-        },
-      });
-
-      if (result.error) throw result.error;
-      // If redirected, browser navigates away and PENDING_KEY handler on "/" finishes it.
-      // If we somehow get tokens back same-tab, do nothing here — page will reload via OAuth flow.
-    } catch (e: any) {
-      localStorage.removeItem(PENDING_KEY);
-      setError(e?.message ?? "Failed to start Google sign-in");
-      setConnectingKey(null);
-    }
-  }
+  }, [id, navigate]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -187,7 +53,7 @@ function EmployeeChatPage() {
       <header className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-6">
         <Link
           to="/"
-          className="flex items-center gap-2 rounded-2xl border border-white/50 bg-white/70 px-3 py-2 shadow-sm backdrop-blur-xl"
+          className="flex items-center gap-2 rounded-2xl border border-white/50 bg-white/70 px-3 py-2 shadow-sm backdrop-blur-xl hover:bg-white"
         >
           <ArrowLeft className="h-4 w-4" />
           <span className="text-sm font-semibold">Home</span>
@@ -199,118 +65,90 @@ function EmployeeChatPage() {
         <div className="w-[88px]" />
       </header>
 
-      {emp && (
-        <div className="mx-auto mt-4 max-w-3xl px-4">
-          <div className="flex items-center gap-3 rounded-3xl border border-white/50 bg-white/70 p-4 shadow-md backdrop-blur-xl">
-            <div className="text-4xl">{emp.avatar_emoji ?? "🤖"}</div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold leading-tight">{emp.role_title}</h1>
-                {emp.status === "active" && (
-                  <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
-                  </span>
-                )}
+      {loading ? (
+        <div className="mt-32 text-center text-sm text-foreground/60">Loading…</div>
+      ) : !emp ? (
+        <div className="mt-32 text-center text-sm text-foreground/60">
+          Employee not found.
+        </div>
+      ) : (
+        <main className="mx-auto mt-10 max-w-3xl px-4 pb-20">
+          {/* Hero card */}
+          <div className="relative overflow-hidden rounded-[32px] border border-white/60 bg-gradient-to-b from-white/90 to-white/70 p-8 shadow-2xl backdrop-blur-2xl">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-gradient-to-br from-orange-300/40 to-pink-400/40 blur-3xl" />
+            <div className="pointer-events-none absolute -left-16 bottom-0 h-48 w-48 rounded-full bg-gradient-to-br from-sky-300/40 to-purple-400/40 blur-3xl" />
+
+            <div className="relative flex flex-col items-center text-center sm:flex-row sm:items-start sm:text-left">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-100 to-purple-100 text-6xl shadow-inner">
+                {emp.avatar_emoji ?? "🤖"}
               </div>
-              {emp.description && (
-                <p className="text-xs text-foreground/70">{emp.description}</p>
-              )}
-              {emp.current_task && (
-                <div className="mt-1 flex items-center gap-1 text-[11px] text-foreground/60">
-                  <Activity className="h-3 w-3" /> {emp.current_task}
+              <div className="mt-4 flex-1 sm:ml-6 sm:mt-0">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                  <h1 className="text-2xl font-bold leading-tight text-foreground sm:text-3xl">
+                    {emp.role_title}
+                  </h1>
+                  <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                    Active
+                  </span>
                 </div>
-              )}
+                {emp.description && (
+                  <p className="mt-2 text-sm text-foreground/70">{emp.description}</p>
+                )}
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-foreground/5 px-3 py-1.5 text-xs font-semibold text-foreground/70">
+                  <span>Salary</span>
+                  <span className="text-foreground">${Number(emp.salary).toLocaleString()}/mo</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
 
-      <main className="mx-auto mt-4 flex max-w-3xl flex-col px-4 pb-32">
-        <div
-          ref={scrollRef}
-          className="flex max-h-[calc(100vh-280px)] flex-col gap-3 overflow-y-auto pb-4"
-        >
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`flex flex-col gap-2 ${m.role === "user" ? "items-end" : "items-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                  m.role === "user"
-                    ? "bg-foreground text-white"
-                    : "border border-white/60 bg-white/80 text-foreground backdrop-blur-xl"
-                }`}
-              >
-                {m.content}
-              </div>
-              {m.role === "assistant" && m.needs && m.needs.length > 0 && (
-                <div className="flex max-w-[85%] flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 p-3 shadow-sm">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                    <Shield className="h-3.5 w-3.5" /> Needs your permission
-                  </div>
-                  {m.needs.map((k) => {
-                    const spec = TOOL_SPECS[k];
-                    if (!spec) return null;
-                    const busy = connectingKey === k;
-                    return (
-                      <button
-                        key={k}
-                        onClick={() => connectTool(k)}
-                        disabled={!!connectingKey}
-                        className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-amber-50 disabled:opacity-60"
-                      >
-                        <span>Connect {spec.label}</span>
-                        {busy ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Check className="h-4 w-4 text-emerald-600" />
-                        )}
-                      </button>
-                    );
-                  })}
-                  <p className="text-[11px] text-amber-900/80">
-                    Real Google sign-in. You approve the exact scope.
-                  </p>
-                </div>
-              )}
-            </div>
-          ))}
-          {sending && (
-            <div className="mr-auto flex items-center gap-2 rounded-2xl border border-white/60 bg-white/80 px-4 py-2 text-sm text-foreground/60 backdrop-blur-xl">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking…
-            </div>
+          {/* Skills */}
+          {Array.isArray(emp.skills) && emp.skills.length > 0 && (
+            <section className="mt-6 rounded-3xl border border-white/60 bg-white/80 p-6 shadow-md backdrop-blur-xl">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-foreground/50">
+                Skills
+              </h2>
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {(emp.skills as string[]).map((s) => (
+                  <li
+                    key={s}
+                    className="rounded-full bg-sky-100/80 px-3 py-1 text-xs font-semibold text-sky-900"
+                  >
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
-        </div>
-        {error && (
-          <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-        )}
-      </main>
 
-      <div className="fixed inset-x-0 bottom-0 px-4 pb-4">
-        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-white/60 bg-white/90 p-2 shadow-xl backdrop-blur-xl">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            rows={1}
-            placeholder={emp ? `Message your ${emp.role_title}…` : "Loading…"}
-            className="max-h-40 flex-1 resize-none bg-transparent px-3 py-2 text-sm focus:outline-none"
-          />
-          <button
-            onClick={send}
-            disabled={sending || !input.trim()}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-white transition hover:brightness-110 disabled:opacity-40"
-          >
-            <ArrowUp className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
+          {/* Current task — frontend placeholder */}
+          <section className="mt-6 rounded-3xl border border-white/60 bg-white/80 p-6 shadow-md backdrop-blur-xl">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-foreground/50">
+              Current activity
+            </h2>
+            <div className="mt-3 flex items-center gap-3 rounded-2xl bg-foreground/5 px-4 py-3 text-sm text-foreground/80">
+              <Activity className="h-4 w-4 text-emerald-600" />
+              <span>{emp.current_task ?? "Ready — waiting for your first task"}</span>
+            </div>
+            <div className="mt-3 flex items-center gap-2 text-[11px] text-foreground/50">
+              <Clock className="h-3 w-3" />
+              Live workflow coming soon
+            </div>
+          </section>
+
+          {/* Chat placeholder — frontend only */}
+          <section className="mt-6 flex flex-col items-center rounded-3xl border border-dashed border-foreground/15 bg-white/50 p-8 text-center shadow-sm backdrop-blur-xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/10">
+              <MessageCircle className="h-5 w-5 text-foreground/60" />
+            </div>
+            <h3 className="mt-3 text-base font-bold text-foreground">Chat coming soon</h3>
+            <p className="mt-1 max-w-sm text-sm text-foreground/60">
+              Your AI employee is on the team. Direct messaging and live tasks are launching soon.
+            </p>
+          </section>
+        </main>
+      )}
     </div>
   );
 }
