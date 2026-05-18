@@ -4,7 +4,7 @@ import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
-const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards. Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a BALANCED monthly salary in USD between 199 and 899 (keep it affordable — these are AI employees, not humans), and a single emoji avatar. Make each of the 3 cards meaningfully different — junior/mid/senior tiers with proportional pricing (e.g. 199, 449, 799).`;
+const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards. Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a monthly salary in USD, and a single emoji avatar. The salaries MUST be exactly 399, 599, and 999 (junior, mid, senior — in that order). Make each of the 3 cards meaningfully different across the three tiers.`;
 
 const CardSchema = z.object({
   role_title: z.string().min(1).max(80),
