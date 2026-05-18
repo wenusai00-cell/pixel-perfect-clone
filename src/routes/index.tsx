@@ -356,7 +356,7 @@ function Index() {
                     <p className="mt-1 line-clamp-2 text-xs text-foreground/70">{e.description}</p>
                   )}
                   <span className="mt-3 text-xs font-semibold text-foreground/80 group-hover:text-foreground">
-                    Open chat →
+                    View profile →
                   </span>
                 </button>
               ))}
