@@ -60,6 +60,10 @@ function Index() {
   const [user, setUser] = useState<User | null>(null);
   const [prompt, setPrompt] = useState("");
   const [openHire, setOpenHire] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [listening, setListening] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<any>(null);
   const [employees, setEmployees] = useState<
     Array<{
       id: string;
