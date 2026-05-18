@@ -55,15 +55,10 @@ function normalizeResponse(parsed: unknown) {
   const source = Array.isArray(parsed) ? parsed : (parsed as { candidates?: unknown })?.candidates;
   if (!Array.isArray(source)) return null;
 
-  const candidates = source.slice(0, 3).map((item) => {
-    const card = item as Record<string, unknown>;
-    const rawSalary = card.salary ?? card.Salary ?? card.monthly_salary ?? 449;
-    let salary =
-      typeof rawSalary === "number"
-        ? rawSalary
-        : Number(String(rawSalary).replace(/[^0-9.]/g, "")) || 449;
-    if (salary > 899) salary = Math.min(899, Math.round(salary / 4));
+  const FIXED_SALARIES = [399, 599, 999];
 
+  const candidates = source.slice(0, 3).map((item, idx) => {
+    const card = item as Record<string, unknown>;
     return {
       role_title: String(card.role_title ?? card.title ?? card.role ?? "AI Employee").slice(0, 80),
       description: String(
@@ -75,7 +70,7 @@ function normalizeResponse(parsed: unknown) {
             .filter(Boolean)
             .slice(0, 8)
         : ["Research", "Automation", "Execution", "Reporting"],
-      salary,
+      salary: FIXED_SALARIES[idx] ?? 599,
       avatar_emoji: String(card.avatar_emoji ?? card.emoji ?? "🤖").slice(0, 16),
     };
   });
