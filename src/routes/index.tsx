@@ -330,14 +330,45 @@ function Index() {
             rows={4}
             className="w-full resize-none bg-transparent text-lg text-foreground placeholder:text-foreground/30 focus:outline-none"
           />
+
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2 text-left">
+              {attachments.map((f, i) => (
+                <span
+                  key={`${f.name}-${i}`}
+                  className="flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                >
+                  <Paperclip className="h-3 w-3 text-foreground/60" />
+                  <span className="max-w-[160px] truncate">{f.name}</span>
+                  <button
+                    onClick={() => removeAttachment(i)}
+                    className="text-foreground/50 hover:text-foreground"
+                    aria-label="Remove attachment"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={handleFilesChosen}
+          />
+
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <IconBtn>
+              <button
+                onClick={handleAttachClick}
+                title="Attach files"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-foreground/70 transition hover:bg-muted hover:text-foreground"
+              >
                 <Paperclip className="h-5 w-5" />
-              </IconBtn>
-              <IconBtn>
-                <Github className="h-5 w-5" />
-              </IconBtn>
+              </button>
               <button className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground">
                 <Sparkles className="h-4 w-4 text-orange-500" />
                 Vnus ai
@@ -345,16 +376,17 @@ function Index() {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground">
-                <Globe className="h-4 w-4" />
-                Public
-              </button>
-              <IconBtn>
-                <SlidersHorizontal className="h-5 w-5" />
-              </IconBtn>
-              <IconBtn>
+              <button
+                onClick={toggleMic}
+                title={listening ? "Stop recording" : "Voice input"}
+                className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
+                  listening
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "text-foreground/70 hover:bg-muted hover:text-foreground"
+                }`}
+              >
                 <Mic className="h-5 w-5" />
-              </IconBtn>
+              </button>
               <button
                 onClick={handleSubmitPrompt}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/10 text-foreground transition hover:bg-foreground hover:text-white"
