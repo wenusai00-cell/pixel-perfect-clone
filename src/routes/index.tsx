@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MessageCircle,
   LayoutGrid,
@@ -8,15 +8,13 @@ import {
   ChevronDown,
   Bot,
   Paperclip,
-  Github,
   Sparkles,
-  SlidersHorizontal,
   Mic,
   ArrowUp,
-  Globe,
   LogOut,
   Layers,
   Briefcase,
+  X,
 } from "lucide-react";
 import skyImage from "@/assets/sky-clouds.jpg";
 import { supabase } from "@/integrations/supabase/client";
