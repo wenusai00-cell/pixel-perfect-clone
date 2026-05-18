@@ -486,13 +486,6 @@ function Index() {
   );
 }
 
-function IconBtn({ children }: { children: React.ReactNode }) {
-  return (
-    <button className="flex h-10 w-10 items-center justify-center rounded-full text-foreground/70 transition hover:bg-muted hover:text-foreground">
-      {children}
-    </button>
-  );
-}
 
 function SuggestionBtn({
   icon,
