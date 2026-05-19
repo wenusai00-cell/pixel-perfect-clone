@@ -4,7 +4,17 @@ import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
-const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards. Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a monthly salary in USD, and a single emoji avatar. The salaries MUST be exactly 399, 599, and 999 (junior, mid, senior — in that order). Make each of the 3 cards meaningfully different across the three tiers.`;
+const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards (junior, mid, senior — in that order).
+
+Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a monthly salary in USD, and a single emoji avatar.
+
+PRICING RULES — decide based on workload weight:
+- LIGHT / single-skill role (e.g. cold email writer, scheduler, simple lead scraper): use base tiers 399 / 599 / 999.
+- MEDIUM role that combines 2 specialties (e.g. lead-gen + outreach + CRM updates): use 599 / 999 / 1499.
+- HEAVY role that replaces multiple employees / runs an end-to-end operation (e.g. full dropshipping operator handling product research + supplier + listings + ads + customer support, full marketing department, full ecommerce ops, full recruiting pipeline): use 999 / 1999 / 3999.
+- EXTREME / enterprise-grade role spanning an entire department with 5+ specialties: scale up to 1499 / 2999 / 5999 or higher (cap 9999).
+
+Always: salaries must be strictly ascending across the 3 cards, integers, no currency symbol. Pick tier honestly based on the actual scope of the role described — do NOT inflate light roles.`;
 
 const CardSchema = z.object({
   role_title: z.string().min(1).max(80),
@@ -16,64 +26,86 @@ const CardSchema = z.object({
 
 const ResponseSchema = z.object({ candidates: z.array(CardSchema).length(3) });
 
+const HEAVY_KEYWORDS = [
+  "dropship", "ecommerce", "e-commerce", "shopify", "amazon fba",
+  "full marketing", "marketing department", "growth team",
+  "recruit", "hiring pipeline", "sales team", "sales department",
+  "customer support team", "operations", "end-to-end", "agency",
+];
+const EXTREME_KEYWORDS = ["enterprise", "entire company", "whole business", "ceo", "cto"];
+
+function tierFor(prompt: string): [number, number, number] {
+  const p = prompt.toLowerCase();
+  if (EXTREME_KEYWORDS.some((k) => p.includes(k))) return [1499, 2999, 5999];
+  if (HEAVY_KEYWORDS.some((k) => p.includes(k))) return [999, 1999, 3999];
+  // medium if prompt mentions multiple verbs / "and"s
+  const ands = (p.match(/\band\b|\+|,/g) ?? []).length;
+  if (ands >= 2) return [599, 999, 1499];
+  return [399, 599, 999];
+}
+
 function fallbackCandidates(prompt: string) {
   const role = prompt.trim().slice(0, 42) || "Growth Operator";
+  const [j, m, s] = tierFor(prompt);
   return {
     candidates: [
       {
         role_title: `Lead ${role}`,
         description: `Finds qualified prospects, enriches data, and prepares outreach workflows.`,
-        skills: [
-          "Lead research",
-          "Data enrichment",
-          "CRM updates",
-          "Outreach planning",
-          "Market targeting",
-        ],
-        salary: 399,
+        skills: ["Lead research", "Data enrichment", "CRM updates", "Outreach planning", "Market targeting"],
+        salary: j,
         avatar_emoji: "🛰️",
       },
       {
-        role_title: `${role} Outreach Agent`,
-        description: `Writes personalized messages and manages follow-up sequences for warm replies.`,
-        skills: ["Cold email", "Personalization", "Follow-ups", "Inbox triage", "Reply handling"],
-        salary: 599,
+        role_title: `${role} Operator`,
+        description: `Runs day-to-day execution and manages follow-up sequences end-to-end.`,
+        skills: ["Execution", "Personalization", "Follow-ups", "Inbox triage", "Reply handling"],
+        salary: m,
         avatar_emoji: "✉️",
       },
       {
         role_title: `Senior ${role} Strategist`,
-        description: `Builds repeatable acquisition systems with task logs and permission-based execution.`,
+        description: `Builds repeatable systems combining multiple specialties into one operator.`,
         skills: ["Strategy", "Automation", "Lead scoring", "Calendar booking", "Reporting"],
-        salary: 999,
+        salary: s,
         avatar_emoji: "🧠",
       },
     ],
   };
 }
 
-function normalizeResponse(parsed: unknown) {
+function normalizeResponse(parsed: unknown, prompt: string) {
   const source = Array.isArray(parsed) ? parsed : (parsed as { candidates?: unknown })?.candidates;
   if (!Array.isArray(source)) return null;
 
-  const FIXED_SALARIES = [399, 599, 999];
+  const fallbackTier = tierFor(prompt);
 
   const candidates = source.slice(0, 3).map((item, idx) => {
     const card = item as Record<string, unknown>;
+    const rawSalary = Number(card.salary);
+    const salary =
+      Number.isFinite(rawSalary) && rawSalary >= 399 && rawSalary <= 9999
+        ? Math.round(rawSalary)
+        : fallbackTier[idx];
     return {
       role_title: String(card.role_title ?? card.title ?? card.role ?? "AI Employee").slice(0, 80),
       description: String(
         card.description ?? card.summary ?? "A specialized AI employee for this role.",
       ).slice(0, 200),
       skills: Array.isArray(card.skills)
-        ? card.skills
-            .map((skill) => String(skill).slice(0, 60))
-            .filter(Boolean)
-            .slice(0, 8)
+        ? card.skills.map((skill) => String(skill).slice(0, 60)).filter(Boolean).slice(0, 8)
         : ["Research", "Automation", "Execution", "Reporting"],
-      salary: FIXED_SALARIES[idx] ?? 599,
+      salary,
       avatar_emoji: String(card.avatar_emoji ?? card.emoji ?? "🤖").slice(0, 16),
     };
   });
+
+  // Ensure strictly ascending salaries
+  for (let i = 1; i < candidates.length; i++) {
+    if (candidates[i].salary <= candidates[i - 1].salary) {
+      candidates[i].salary = candidates[i - 1].salary + 200;
+    }
+  }
 
   return { candidates };
 }
@@ -121,7 +153,7 @@ export const generateEmployeeCandidates = createServerFn({ method: "POST" })
       return fallbackCandidates(data.prompt);
     }
 
-    const normalized = normalizeResponse(parsed);
+    const normalized = normalizeResponse(parsed, data.prompt);
     const result = ResponseSchema.safeParse(normalized);
     if (!result.success) {
       console.warn(
