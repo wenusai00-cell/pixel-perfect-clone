@@ -153,7 +153,7 @@ export const generateEmployeeCandidates = createServerFn({ method: "POST" })
       return fallbackCandidates(data.prompt);
     }
 
-    const normalized = normalizeResponse(parsed);
+    const normalized = normalizeResponse(parsed, data.prompt);
     const result = ResponseSchema.safeParse(normalized);
     if (!result.success) {
       console.warn(
