@@ -195,7 +195,7 @@ function Index() {
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Sky background */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
+      <div className="absolute inset-0 -z-10">
         <img
           src={skyImage}
           alt=""
@@ -203,16 +203,9 @@ function Index() {
           height={1280}
           className="h-full w-full object-cover"
         />
-        {/* Animated clouds */}
-        <div className="pointer-events-none absolute inset-0">
-          <div className="cloud" style={{ top: "8%", width: 220, height: 60, opacity: 0.85, animation: "cloud-drift 60s linear infinite, cloud-bob 7s ease-in-out infinite" }} />
-          <div className="cloud" style={{ top: "22%", width: 320, height: 80, opacity: 0.7, animation: "cloud-drift-slow 95s linear infinite 8s, cloud-bob 9s ease-in-out infinite" }} />
-          <div className="cloud" style={{ top: "38%", width: 180, height: 50, opacity: 0.6, animation: "cloud-drift 75s linear infinite 20s, cloud-bob 6s ease-in-out infinite" }} />
-          <div className="cloud" style={{ top: "55%", width: 280, height: 70, opacity: 0.55, animation: "cloud-drift-slow 110s linear infinite 4s, cloud-bob 8s ease-in-out infinite" }} />
-          <div className="cloud" style={{ top: "70%", width: 200, height: 55, opacity: 0.5, animation: "cloud-drift 85s linear infinite 35s, cloud-bob 7.5s ease-in-out infinite" }} />
-        </div>
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-white" />
       </div>
+
 
 
       {/* Top bar */}
