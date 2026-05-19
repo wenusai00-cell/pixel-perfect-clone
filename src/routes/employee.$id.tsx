@@ -137,16 +137,78 @@ function EmployeeProfilePage() {
             </div>
           </section>
 
-          {/* Chat placeholder — frontend only */}
-          <section className="mt-6 flex flex-col items-center rounded-3xl border border-dashed border-foreground/15 bg-white/50 p-8 text-center shadow-sm backdrop-blur-xl">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/10">
-              <MessageCircle className="h-5 w-5 text-foreground/60" />
+          {/* Chat box — frontend only, non-functional */}
+          <section className="mt-6 overflow-hidden rounded-3xl border border-white/60 bg-white/80 shadow-md backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-foreground/5 px-5 py-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                <h2 className="text-sm font-bold text-foreground">Chat with {emp.role_title}</h2>
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/40">
+                Preview
+              </span>
             </div>
-            <h3 className="mt-3 text-base font-bold text-foreground">Chat coming soon</h3>
-            <p className="mt-1 max-w-sm text-sm text-foreground/60">
-              Your AI employee is on the team. Direct messaging and live tasks are launching soon.
-            </p>
+
+            <div className="flex max-h-[360px] min-h-[260px] flex-col gap-3 overflow-y-auto px-5 py-5">
+              <div className="flex items-end gap-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
+                  {emp.avatar_emoji ?? "🤖"}
+                </div>
+                <div className="max-w-[78%] rounded-2xl rounded-bl-md bg-foreground/5 px-4 py-2.5 text-sm text-foreground/80">
+                  Hey! I'm your {emp.role_title}. What should we tackle first?
+                </div>
+              </div>
+              <div className="flex items-end justify-end gap-2">
+                <div className="max-w-[78%] rounded-2xl rounded-br-md bg-gradient-to-br from-sky-500 to-indigo-500 px-4 py-2.5 text-sm text-white shadow-sm">
+                  Let's brainstorm a launch plan.
+                </div>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
+                  {emp.avatar_emoji ?? "🤖"}
+                </div>
+                <div className="max-w-[78%] rounded-2xl rounded-bl-md bg-foreground/5 px-4 py-2.5 text-sm text-foreground/80">
+                  On it — drafting a plan now.
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-foreground/5 bg-white/60 p-3">
+              <div className="flex items-center gap-2 rounded-2xl border border-foreground/10 bg-white px-3 py-2 shadow-sm">
+                <button
+                  type="button"
+                  disabled
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-foreground/50 hover:bg-foreground/5"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+                <input
+                  type="text"
+                  placeholder="Message your AI employee…"
+                  disabled
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/40 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-foreground/50 hover:bg-foreground/5"
+                >
+                  <Mic className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-2 text-center text-[10px] text-foreground/40">
+                Live chat launching soon
+              </p>
+            </div>
           </section>
+
         </main>
       )}
     </div>
