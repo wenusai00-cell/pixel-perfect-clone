@@ -155,3 +155,31 @@
   animation: marquee 35s linear infinite;
 }
 .animate-marquee:hover { animation-play-state: paused; }
+
+@keyframes cloud-drift {
+  0% { transform: translateX(-20vw); }
+  100% { transform: translateX(120vw); }
+}
+@keyframes cloud-drift-slow {
+  0% { transform: translateX(-30vw); }
+  100% { transform: translateX(130vw); }
+}
+@keyframes cloud-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.cloud {
+  position: absolute;
+  background: radial-gradient(ellipse at 30% 40%, rgba(255,255,255,0.95), rgba(255,255,255,0.55) 60%, rgba(255,255,255,0) 75%);
+  border-radius: 9999px;
+  filter: blur(2px);
+  will-change: transform;
+}
+.cloud::before, .cloud::after {
+  content: "";
+  position: absolute;
+  background: inherit;
+  border-radius: 9999px;
+}
+.cloud::before { width: 60%; height: 130%; top: -45%; left: 15%; }
+.cloud::after  { width: 50%; height: 110%; top: -25%; right: 10%; }
