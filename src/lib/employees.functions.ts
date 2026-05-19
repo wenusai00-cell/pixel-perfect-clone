@@ -4,7 +4,17 @@ import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
-const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards. Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a monthly salary in USD, and a single emoji avatar. The salaries MUST be exactly 399, 599, and 999 (junior, mid, senior — in that order). Make each of the 3 cards meaningfully different across the three tiers.`;
+const SYSTEM = `You are an AI Employee Architect. When a user requests an employee, research the role and return 3 distinct AI Employee cards (junior, mid, senior — in that order).
+
+Each card has: a creative role_title, a short 1-line description, an array of 4-6 specific skills, a monthly salary in USD, and a single emoji avatar.
+
+PRICING RULES — decide based on workload weight:
+- LIGHT / single-skill role (e.g. cold email writer, scheduler, simple lead scraper): use base tiers 399 / 599 / 999.
+- MEDIUM role that combines 2 specialties (e.g. lead-gen + outreach + CRM updates): use 599 / 999 / 1499.
+- HEAVY role that replaces multiple employees / runs an end-to-end operation (e.g. full dropshipping operator handling product research + supplier + listings + ads + customer support, full marketing department, full ecommerce ops, full recruiting pipeline): use 999 / 1999 / 3999.
+- EXTREME / enterprise-grade role spanning an entire department with 5+ specialties: scale up to 1499 / 2999 / 5999 or higher (cap 9999).
+
+Always: salaries must be strictly ascending across the 3 cards, integers, no currency symbol. Pick tier honestly based on the actual scope of the role described — do NOT inflate light roles.`;
 
 const CardSchema = z.object({
   role_title: z.string().min(1).max(80),
