@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { ArrowLeft, Sparkles, Activity, Clock, MessageCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Sparkles, Activity, Clock, Send, Paperclip, Mic } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import skyImage from "@/assets/sky-clouds.jpg";
 
