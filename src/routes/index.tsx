@@ -230,9 +230,6 @@ function Index() {
                 <Briefcase className="h-4 w-4" /> Workforce
               </Link>
               <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
-                <Gift className="h-5 w-5 text-foreground" />
-              </button>
-              <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
                 <Bell className="h-5 w-5 text-foreground" />
               </button>
               <button
