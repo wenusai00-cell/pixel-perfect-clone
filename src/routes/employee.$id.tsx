@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Sparkles, Activity, Clock, Send, Paperclip, Mic } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, Sparkles, Activity, Clock, Send } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import skyImage from "@/assets/sky-clouds.jpg";
 
@@ -175,26 +175,12 @@ function EmployeeProfilePage() {
 
             <div className="border-t border-foreground/5 bg-white/60 p-3">
               <div className="flex items-center gap-2 rounded-2xl border border-foreground/10 bg-white px-3 py-2 shadow-sm">
-                <button
-                  type="button"
-                  disabled
-                  className="flex h-8 w-8 items-center justify-center rounded-xl text-foreground/50 hover:bg-foreground/5"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
                 <input
                   type="text"
                   placeholder="Message your AI employee…"
                   disabled
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/40 focus:outline-none"
                 />
-                <button
-                  type="button"
-                  disabled
-                  className="flex h-8 w-8 items-center justify-center rounded-xl text-foreground/50 hover:bg-foreground/5"
-                >
-                  <Mic className="h-4 w-4" />
-                </button>
                 <button
                   type="button"
                   disabled
