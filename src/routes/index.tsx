@@ -229,9 +229,6 @@ function Index() {
               >
                 <Briefcase className="h-4 w-4" /> Workforce
               </Link>
-              <button className="rounded-full bg-[var(--brand-yellow)] px-5 py-2.5 text-sm font-bold text-foreground shadow-sm transition hover:brightness-105">
-                Buy Credits
-              </button>
               <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
                 <Gift className="h-5 w-5 text-foreground" />
               </button>
