@@ -2,8 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   MessageCircle,
-  LayoutGrid,
-  Gift,
   Bell,
   ChevronDown,
   Bot,
@@ -218,10 +216,6 @@ function Index() {
           <button className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm backdrop-blur">
             <MessageCircle className="h-5 w-5 text-foreground" />
           </button>
-          <button className="ml-2 flex items-center gap-2 rounded-2xl bg-sky-200/70 px-4 py-2.5 text-foreground shadow-sm backdrop-blur">
-            <LayoutGrid className="h-5 w-5" />
-            <span className="text-[15px] font-semibold">Home</span>
-          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -233,12 +227,6 @@ function Index() {
               >
                 <Briefcase className="h-4 w-4" /> Workforce
               </Link>
-              <button className="rounded-full bg-[var(--brand-yellow)] px-5 py-2.5 text-sm font-bold text-foreground shadow-sm transition hover:brightness-105">
-                Buy Credits
-              </button>
-              <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
-                <Gift className="h-5 w-5 text-foreground" />
-              </button>
               <button className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
                 <Bell className="h-5 w-5 text-foreground" />
               </button>
