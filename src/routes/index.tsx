@@ -2,6 +2,9 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   MessageCircle,
+  LayoutGrid,
+  Gift,
+  Bell,
   ChevronDown,
   Bot,
   Paperclip,
