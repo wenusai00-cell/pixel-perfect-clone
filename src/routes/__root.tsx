@@ -80,6 +80,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Vnus Ai" },
+      { name: "twitter:description", content: "Vnus Ai — Where ideas become reality" },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f4345501-8a82-4ce8-8956-8d802c1efd15/id-preview-23a60d6a--ff3f33ca-e559-4ba1-b531-d8f54b28ffba.lovable.app-1779939373033.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f4345501-8a82-4ce8-8956-8d802c1efd15/id-preview-23a60d6a--ff3f33ca-e559-4ba1-b531-d8f54b28ffba.lovable.app-1779939373033.png" },
     ],
     links: [
       {
