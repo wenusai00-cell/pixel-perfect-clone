@@ -33,55 +33,58 @@ export const loadChatHistory = createServerFn({ method: "POST" })
     };
   });
 
-// --- Firecrawl helpers (call via Lovable connector gateway) ---
-const FIRECRAWL_GATEWAY = "https://connector-gateway.lovable.dev/firecrawl";
+// --- Web tools (cheerio + fetch, no API key needed) ---
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-async function firecrawlScrape(url: string): Promise<string> {
-  const lovableKey = process.env.LOVABLE_API_KEY;
-  const fcKey = process.env.FIRECRAWL_API_KEY;
-  if (!lovableKey || !fcKey) {
-    return "[web_scrape unavailable: Firecrawl connector not linked]";
+async function webScrape(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+      redirect: "follow",
+    });
+    if (!res.ok) return `[scrape failed ${res.status} for ${url}]`;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    $("script, style, noscript, svg, iframe, nav, footer, header").remove();
+    const title = $("title").first().text().trim();
+    const text = $("body")
+      .text()
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 8000);
+    return JSON.stringify({ url, title, text });
+  } catch (e: any) {
+    return `[scrape error: ${e?.message ?? "unknown"}]`;
   }
-  const res = await fetch(`${FIRECRAWL_GATEWAY}/v2/scrape`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": fcKey,
-    },
-    body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
-  });
-  if (!res.ok) return `[scrape failed ${res.status}]`;
-  const j = (await res.json()) as any;
-  const md = j.data?.markdown ?? j.markdown ?? "";
-  return String(md).slice(0, 8000);
 }
 
-async function firecrawlSearch(query: string, limit = 5): Promise<string> {
-  const lovableKey = process.env.LOVABLE_API_KEY;
-  const fcKey = process.env.FIRECRAWL_API_KEY;
-  if (!lovableKey || !fcKey) {
-    return "[web_search unavailable: Firecrawl connector not linked]";
+async function webSearch(query: string, limit = 5): Promise<string> {
+  try {
+    // DuckDuckGo HTML endpoint — no key required
+    const u = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const res = await fetch(u, {
+      headers: { "User-Agent": UA, Accept: "text/html" },
+    });
+    if (!res.ok) return `[search failed ${res.status}]`;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const results: { title: string; url: string; snippet: string }[] = [];
+    $(".result").each((_, el) => {
+      if (results.length >= limit) return;
+      const a = $(el).find("a.result__a").first();
+      const title = a.text().trim();
+      let href = a.attr("href") ?? "";
+      // DuckDuckGo wraps urls in /l/?uddg=...
+      const m = href.match(/uddg=([^&]+)/);
+      if (m) href = decodeURIComponent(m[1]);
+      const snippet = $(el).find(".result__snippet").text().trim();
+      if (title && href) results.push({ title, url: href, snippet });
+    });
+    return JSON.stringify(results);
+  } catch (e: any) {
+    return `[search error: ${e?.message ?? "unknown"}]`;
   }
-  const res = await fetch(`${FIRECRAWL_GATEWAY}/v2/search`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": fcKey,
-    },
-    body: JSON.stringify({ query, limit }),
-  });
-  if (!res.ok) return `[search failed ${res.status}]`;
-  const j = (await res.json()) as any;
-  const results = j.data ?? j.web?.results ?? [];
-  return JSON.stringify(
-    (results as any[]).slice(0, limit).map((r) => ({
-      title: r.title,
-      url: r.url,
-      description: r.description ?? r.snippet,
-    })),
-  );
 }
 
 export const chatWithEmployee = createServerFn({ method: "POST" })
