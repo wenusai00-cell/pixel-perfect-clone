@@ -112,8 +112,6 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       ? (emp.skills as string[]).join(", ")
       : "";
 
-    const hasFirecrawl = !!process.env.FIRECRAWL_API_KEY;
-
     const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
 Skills: ${skills}
 ${emp.description ? `About you: ${emp.description}` : ""}
@@ -121,7 +119,7 @@ ${emp.description ? `About you: ${emp.description}` : ""}
 How you work:
 - You are proactive. When the user gives a task, just DO it and report results crisply.
 - Reply like a senior employee texting an update: 2-6 sentences, markdown allowed.
-- You have web tools (${hasFirecrawl ? "ENABLED" : "DISABLED — tell the user to connect the Firecrawl connector to enable web research, scraping, maps lookups, etc."}):
+- You have web tools (ENABLED):
   • web_search — search the open web for current info
   • web_scrape — fetch the readable content of any URL (articles, product pages, maps results, docs, etc.)
 - Use tools whenever the task needs real-world info (news, prices, addresses, competitors, contact info, maps, research). Don't ask permission — just use them.
