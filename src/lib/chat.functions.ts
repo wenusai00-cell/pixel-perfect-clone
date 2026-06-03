@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { generateText, stepCountIs, tool } from "ai";
+import * as cheerio from "cheerio";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
@@ -32,55 +33,58 @@ export const loadChatHistory = createServerFn({ method: "POST" })
     };
   });
 
-// --- Firecrawl helpers (call via Lovable connector gateway) ---
-const FIRECRAWL_GATEWAY = "https://connector-gateway.lovable.dev/firecrawl";
+// --- Web tools (cheerio + fetch, no API key needed) ---
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-async function firecrawlScrape(url: string): Promise<string> {
-  const lovableKey = process.env.LOVABLE_API_KEY;
-  const fcKey = process.env.FIRECRAWL_API_KEY;
-  if (!lovableKey || !fcKey) {
-    return "[web_scrape unavailable: Firecrawl connector not linked]";
+async function webScrape(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+      redirect: "follow",
+    });
+    if (!res.ok) return `[scrape failed ${res.status} for ${url}]`;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    $("script, style, noscript, svg, iframe, nav, footer, header").remove();
+    const title = $("title").first().text().trim();
+    const text = $("body")
+      .text()
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 8000);
+    return JSON.stringify({ url, title, text });
+  } catch (e: any) {
+    return `[scrape error: ${e?.message ?? "unknown"}]`;
   }
-  const res = await fetch(`${FIRECRAWL_GATEWAY}/v2/scrape`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": fcKey,
-    },
-    body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
-  });
-  if (!res.ok) return `[scrape failed ${res.status}]`;
-  const j = (await res.json()) as any;
-  const md = j.data?.markdown ?? j.markdown ?? "";
-  return String(md).slice(0, 8000);
 }
 
-async function firecrawlSearch(query: string, limit = 5): Promise<string> {
-  const lovableKey = process.env.LOVABLE_API_KEY;
-  const fcKey = process.env.FIRECRAWL_API_KEY;
-  if (!lovableKey || !fcKey) {
-    return "[web_search unavailable: Firecrawl connector not linked]";
+async function webSearch(query: string, limit = 5): Promise<string> {
+  try {
+    // DuckDuckGo HTML endpoint — no key required
+    const u = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const res = await fetch(u, {
+      headers: { "User-Agent": UA, Accept: "text/html" },
+    });
+    if (!res.ok) return `[search failed ${res.status}]`;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const results: { title: string; url: string; snippet: string }[] = [];
+    $(".result").each((_, el) => {
+      if (results.length >= limit) return;
+      const a = $(el).find("a.result__a").first();
+      const title = a.text().trim();
+      let href = a.attr("href") ?? "";
+      // DuckDuckGo wraps urls in /l/?uddg=...
+      const m = href.match(/uddg=([^&]+)/);
+      if (m) href = decodeURIComponent(m[1]);
+      const snippet = $(el).find(".result__snippet").text().trim();
+      if (title && href) results.push({ title, url: href, snippet });
+    });
+    return JSON.stringify(results);
+  } catch (e: any) {
+    return `[search error: ${e?.message ?? "unknown"}]`;
   }
-  const res = await fetch(`${FIRECRAWL_GATEWAY}/v2/search`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": fcKey,
-    },
-    body: JSON.stringify({ query, limit }),
-  });
-  if (!res.ok) return `[search failed ${res.status}]`;
-  const j = (await res.json()) as any;
-  const results = j.data ?? j.web?.results ?? [];
-  return JSON.stringify(
-    (results as any[]).slice(0, limit).map((r) => ({
-      title: r.title,
-      url: r.url,
-      description: r.description ?? r.snippet,
-    })),
-  );
 }
 
 export const chatWithEmployee = createServerFn({ method: "POST" })
@@ -108,8 +112,6 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       ? (emp.skills as string[]).join(", ")
       : "";
 
-    const hasFirecrawl = !!process.env.FIRECRAWL_API_KEY;
-
     const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
 Skills: ${skills}
 ${emp.description ? `About you: ${emp.description}` : ""}
@@ -117,7 +119,7 @@ ${emp.description ? `About you: ${emp.description}` : ""}
 How you work:
 - You are proactive. When the user gives a task, just DO it and report results crisply.
 - Reply like a senior employee texting an update: 2-6 sentences, markdown allowed.
-- You have web tools (${hasFirecrawl ? "ENABLED" : "DISABLED — tell the user to connect the Firecrawl connector to enable web research, scraping, maps lookups, etc."}):
+- You have web tools (ENABLED):
   • web_search — search the open web for current info
   • web_scrape — fetch the readable content of any URL (articles, product pages, maps results, docs, etc.)
 - Use tools whenever the task needs real-world info (news, prices, addresses, competitors, contact info, maps, research). Don't ask permission — just use them.
@@ -137,13 +139,13 @@ How you work:
           query: z.string().min(1).max(300),
           limit: z.number().int().min(1).max(10).optional(),
         }),
-        execute: async ({ query, limit }) => firecrawlSearch(query, limit ?? 5),
+        execute: async ({ query, limit }) => webSearch(query, limit ?? 5),
       }),
       web_scrape: tool({
         description:
-          "Fetch the main readable content of a specific URL as markdown. Use after web_search to read a result, or when the user gives you a link.",
+          "Fetch the main readable content of a specific URL. Use after web_search to read a result, or when the user gives you a link.",
         inputSchema: z.object({ url: z.string().url() }),
-        execute: async ({ url }) => firecrawlScrape(url),
+        execute: async ({ url }) => webScrape(url),
       }),
     };
 
