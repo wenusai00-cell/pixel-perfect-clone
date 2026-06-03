@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateText } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
 
@@ -32,6 +32,57 @@ export const loadChatHistory = createServerFn({ method: "POST" })
     };
   });
 
+// --- Firecrawl helpers (call via Lovable connector gateway) ---
+const FIRECRAWL_GATEWAY = "https://connector-gateway.lovable.dev/firecrawl";
+
+async function firecrawlScrape(url: string): Promise<string> {
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  const fcKey = process.env.FIRECRAWL_API_KEY;
+  if (!lovableKey || !fcKey) {
+    return "[web_scrape unavailable: Firecrawl connector not linked]";
+  }
+  const res = await fetch(`${FIRECRAWL_GATEWAY}/v2/scrape`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": fcKey,
+    },
+    body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
+  });
+  if (!res.ok) return `[scrape failed ${res.status}]`;
+  const j = (await res.json()) as any;
+  const md = j.data?.markdown ?? j.markdown ?? "";
+  return String(md).slice(0, 8000);
+}
+
+async function firecrawlSearch(query: string, limit = 5): Promise<string> {
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  const fcKey = process.env.FIRECRAWL_API_KEY;
+  if (!lovableKey || !fcKey) {
+    return "[web_search unavailable: Firecrawl connector not linked]";
+  }
+  const res = await fetch(`${FIRECRAWL_GATEWAY}/v2/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": fcKey,
+    },
+    body: JSON.stringify({ query, limit }),
+  });
+  if (!res.ok) return `[search failed ${res.status}]`;
+  const j = (await res.json()) as any;
+  const results = j.data ?? j.web?.results ?? [];
+  return JSON.stringify(
+    (results as any[]).slice(0, limit).map((r) => ({
+      title: r.title,
+      url: r.url,
+      description: r.description ?? r.snippet,
+    })),
+  );
+}
+
 export const chatWithEmployee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -53,68 +104,58 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       .single();
     if (error || !emp) throw new Error("Employee not found");
 
-    const { data: perms } = await supabase
-      .from("employee_permissions")
-      .select("permission_key, granted")
-      .eq("employee_id", data.employee_id)
-      .eq("user_id", userId);
+    const skills = Array.isArray(emp.skills)
+      ? (emp.skills as string[]).join(", ")
+      : "";
 
-    const grantedPerms = (perms ?? [])
-      .filter((p) => p.granted)
-      .map((p) => p.permission_key);
+    const hasFirecrawl = !!process.env.FIRECRAWL_API_KEY;
 
-    const skills = Array.isArray(emp.skills) ? (emp.skills as string[]).join(", ") : "";
-
-    const TOOL_CATALOG = `
-Tool keys you can request when needed (use the exact key):
-- gmail_send → send emails on user's behalf
-- gmail_read → read user's inbox
-- calendar → create/read events
-- drive → upload/read files
-- sheets → read/write spreadsheets
-- docs → read/write google docs
-- contacts → read contacts
-- maps → location/places lookups
-`;
-
-    const system = `You are "${emp.role_title}", an AI Employee for the user on Vnus AI.
+    const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
 Skills: ${skills}
-Already-granted tools: ${grantedPerms.join(", ") || "none yet"}.
+${emp.description ? `About you: ${emp.description}` : ""}
 
-${TOOL_CATALOG}
-
-RULES — read carefully:
-- Be EXTREMELY concise. 1-3 short sentences.
-- DO NOT explain your process. Just do the work and report the result like a senior employee texting an update.
-- If a task NEEDS a tool that is NOT in "Already-granted tools", you MUST end your reply with a single marker line of this exact format (and nothing after it):
-  <<NEED_TOOLS:key1,key2>>
-  Example: "Need Gmail access to send these. <<NEED_TOOLS:gmail_send>>"
-- Only request the MINIMUM tools needed for the user's current task. Never request a tool that is already granted.
-- Never invent tool keys outside the catalog.
-- Stay in character. Never mention you're an AI model.`;
+How you work:
+- You are proactive. When the user gives a task, just DO it and report results crisply.
+- Reply like a senior employee texting an update: 2-6 sentences, markdown allowed.
+- You have web tools (${hasFirecrawl ? "ENABLED" : "DISABLED — tell the user to connect the Firecrawl connector to enable web research, scraping, maps lookups, etc."}):
+  • web_search — search the open web for current info
+  • web_scrape — fetch the readable content of any URL (articles, product pages, maps results, docs, etc.)
+- Use tools whenever the task needs real-world info (news, prices, addresses, competitors, contact info, maps, research). Don't ask permission — just use them.
+- After using a tool, synthesize the result for the user. Cite URLs.
+- Never say you're an AI model. Stay in character as ${emp.role_title}.`;
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("LOVABLE_API_KEY not configured");
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-2.5-flash");
 
+    const tools = {
+      web_search: tool({
+        description:
+          "Search the web for up-to-date information. Use for news, prices, businesses, maps results, competitors, anything current.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(300),
+          limit: z.number().int().min(1).max(10).optional(),
+        }),
+        execute: async ({ query, limit }) => firecrawlSearch(query, limit ?? 5),
+      }),
+      web_scrape: tool({
+        description:
+          "Fetch the main readable content of a specific URL as markdown. Use after web_search to read a result, or when the user gives you a link.",
+        inputSchema: z.object({ url: z.string().url() }),
+        execute: async ({ url }) => firecrawlScrape(url),
+      }),
+    };
+
     const { text } = await generateText({
       model,
       system,
       messages: data.messages,
+      tools,
+      stopWhen: stepCountIs(6),
     });
 
-    let reply = text.trim();
-    let needs: string[] = [];
-    const m = reply.match(/<<NEED_TOOLS:([^>]+)>>\s*$/);
-    if (m) {
-      needs = m[1]
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .filter((k) => !grantedPerms.includes(k));
-      reply = reply.replace(/<<NEED_TOOLS:[^>]+>>\s*$/, "").trim();
-    }
+    const reply = text.trim() || "Done.";
 
     const lastUser = [...data.messages].reverse().find((mm) => mm.role === "user");
     const toInsert = [];
@@ -134,5 +175,5 @@ RULES — read carefully:
     });
     await supabase.from("employee_chat_messages").insert(toInsert);
 
-    return { reply, needs };
+    return { reply };
   });

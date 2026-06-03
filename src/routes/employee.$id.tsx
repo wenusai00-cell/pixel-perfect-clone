@@ -1,7 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Send, Paperclip, Mic, X, Activity, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { chatWithEmployee, loadChatHistory } from "@/lib/chat.functions";
 import skyImage from "@/assets/sky-clouds.jpg";
 
 export const Route = createFileRoute("/employee/$id")({
@@ -20,12 +22,22 @@ type Employee = {
   salary: number;
 };
 
+type ChatMsg = { role: "user" | "assistant"; content: string };
+
 function EmployeeProfilePage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
+  const sendChat = useServerFn(chatWithEmployee);
+  const loadHistory = useServerFn(loadChatHistory);
+
   const [emp, setEmp] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSpecs, setShowSpecs] = useState(false);
+
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -40,9 +52,50 @@ function EmployeeProfilePage() {
         .eq("id", id)
         .single();
       if (data) setEmp(data as any);
+      try {
+        const h = await loadHistory({ data: { employee_id: id } });
+        if (h.messages?.length) {
+          setMessages(h.messages);
+        } else if (data) {
+          setMessages([
+            {
+              role: "assistant",
+              content: `Hey! I'm your ${(data as any).role_title}. What should we tackle first?`,
+            },
+          ]);
+        }
+      } catch {
+        // ignore
+      }
       setLoading(false);
     })();
-  }, [id, navigate]);
+  }, [id, navigate, loadHistory]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, sending]);
+
+  async function handleSend() {
+    const text = input.trim();
+    if (!text || sending) return;
+    const next: ChatMsg[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    setInput("");
+    setSending(true);
+    try {
+      const res = await sendChat({
+        data: { employee_id: id, messages: next.slice(-20) },
+      });
+      setMessages((m) => [...m, { role: "assistant", content: res.reply }]);
+    } catch (e: any) {
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: `⚠️ ${e?.message ?? "Something went wrong."}` },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="relative flex h-[100dvh] flex-col overflow-hidden">
@@ -57,7 +110,6 @@ function EmployeeProfilePage() {
         <div className="m-auto text-sm text-foreground/60">Employee not found.</div>
       ) : (
         <>
-          {/* WhatsApp-style header — tap to see specs */}
           <header className="flex items-center gap-3 border-b border-white/50 bg-white/70 px-3 py-2.5 shadow-sm backdrop-blur-xl">
             <Link
               to="/"
@@ -79,40 +131,49 @@ function EmployeeProfilePage() {
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-600">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                  online
+                  {sending ? "typing…" : "online"}
                 </div>
               </div>
             </button>
           </header>
 
-          {/* Chat messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
             <div className="mx-auto flex max-w-2xl flex-col gap-3">
-              <div className="flex items-end gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
-                  {emp.avatar_emoji ?? "🤖"}
+              {messages.map((m, i) =>
+                m.role === "assistant" ? (
+                  <div key={i} className="flex items-end gap-2">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
+                      {emp.avatar_emoji ?? "🤖"}
+                    </div>
+                    <div className="max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white/90 px-4 py-2.5 text-sm text-foreground/85 shadow-sm">
+                      {m.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="flex items-end justify-end gap-2">
+                    <div className="max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-gradient-to-br from-sky-500 to-indigo-500 px-4 py-2.5 text-sm text-white shadow-sm">
+                      {m.content}
+                    </div>
+                  </div>
+                ),
+              )}
+              {sending && (
+                <div className="flex items-end gap-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
+                    {emp.avatar_emoji ?? "🤖"}
+                  </div>
+                  <div className="rounded-2xl rounded-bl-md bg-white/90 px-4 py-2.5 text-sm text-foreground/50 shadow-sm">
+                    <span className="inline-flex gap-1">
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40 [animation-delay:-0.3s]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40 [animation-delay:-0.15s]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" />
+                    </span>
+                  </div>
                 </div>
-                <div className="max-w-[78%] rounded-2xl rounded-bl-md bg-white/90 px-4 py-2.5 text-sm text-foreground/85 shadow-sm">
-                  Hey! I'm your {emp.role_title}. What should we tackle first?
-                </div>
-              </div>
-              <div className="flex items-end justify-end gap-2">
-                <div className="max-w-[78%] rounded-2xl rounded-br-md bg-gradient-to-br from-sky-500 to-indigo-500 px-4 py-2.5 text-sm text-white shadow-sm">
-                  Let's brainstorm a launch plan.
-                </div>
-              </div>
-              <div className="flex items-end gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
-                  {emp.avatar_emoji ?? "🤖"}
-                </div>
-                <div className="max-w-[78%] rounded-2xl rounded-bl-md bg-white/90 px-4 py-2.5 text-sm text-foreground/85 shadow-sm">
-                  On it — drafting a plan now.
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
-          {/* Input bar */}
           <div className="border-t border-white/50 bg-white/70 p-3 backdrop-blur-xl">
             <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-full border border-foreground/10 bg-white px-3 py-2 shadow-sm">
               <button
@@ -125,8 +186,16 @@ function EmployeeProfilePage() {
               <input
                 type="text"
                 placeholder="Message…"
-                disabled
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/40 focus:outline-none"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                disabled={sending}
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/40 focus:outline-none disabled:opacity-60"
               />
               <button
                 type="button"
@@ -137,15 +206,15 @@ function EmployeeProfilePage() {
               </button>
               <button
                 type="button"
-                disabled
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm"
+                onClick={handleSend}
+                disabled={sending || !input.trim()}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          {/* Specs sheet — opens when user taps the header */}
           {showSpecs && (
             <div
               className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center"
