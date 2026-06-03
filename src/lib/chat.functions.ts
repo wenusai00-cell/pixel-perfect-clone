@@ -141,13 +141,13 @@ How you work:
           query: z.string().min(1).max(300),
           limit: z.number().int().min(1).max(10).optional(),
         }),
-        execute: async ({ query, limit }) => firecrawlSearch(query, limit ?? 5),
+        execute: async ({ query, limit }) => webSearch(query, limit ?? 5),
       }),
       web_scrape: tool({
         description:
-          "Fetch the main readable content of a specific URL as markdown. Use after web_search to read a result, or when the user gives you a link.",
+          "Fetch the main readable content of a specific URL. Use after web_search to read a result, or when the user gives you a link.",
         inputSchema: z.object({ url: z.string().url() }),
-        execute: async ({ url }) => firecrawlScrape(url),
+        execute: async ({ url }) => webScrape(url),
       }),
     };
 
