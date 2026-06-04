@@ -149,6 +149,57 @@ async function firecrawlDeepSearch(query: string, limit = 6): Promise<string> {
   }
 }
 
+// --- Lovable Connector Gateway (Gmail, Sheets, Calendar, Docs, Drive, Maps, Telegram) ---
+const GATEWAY = "https://connector-gateway.lovable.dev";
+
+function connectorHeaders(connectorKey: string) {
+  const lovKey = process.env.LOVABLE_API_KEY;
+  const conKey = process.env[connectorKey];
+  if (!lovKey) return null;
+  if (!conKey) return null;
+  return {
+    Authorization: `Bearer ${lovKey}`,
+    "X-Connection-Api-Key": conKey,
+    "Content-Type": "application/json",
+  } as Record<string, string>;
+}
+
+async function gatewayCall(
+  connectorKey: string,
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<string> {
+  const headers = connectorHeaders(connectorKey);
+  if (!headers) return `[connector ${connectorKey} not connected — ask user to link it]`;
+  try {
+    const res = await fetch(`${GATEWAY}${path}`, {
+      method: init.method ?? "GET",
+      headers,
+      body: init.body ? JSON.stringify(init.body) : undefined,
+    });
+    const text = await res.text();
+    if (!res.ok) return `[gateway ${res.status}: ${text.slice(0, 500)}]`;
+    return text.slice(0, 8000);
+  } catch (e: any) {
+    return `[gateway error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+// Gmail
+function buildRawEmail(to: string, subject: string, body: string, cc?: string, bcc?: string): string {
+  const lines = [`To: ${to}`];
+  if (cc) lines.push(`Cc: ${cc}`);
+  if (bcc) lines.push(`Bcc: ${bcc}`);
+  lines.push(`Subject: ${subject}`, 'Content-Type: text/plain; charset="UTF-8"', "", body);
+  const raw = lines.join("\r\n");
+  // base64url
+  return Buffer.from(raw, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
 
 export const chatWithEmployee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -175,22 +226,42 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       ? (emp.skills as string[]).join(", ")
       : "";
 
+    const connected = {
+      gmail: !!process.env.GOOGLE_MAIL_API_KEY,
+      sheets: !!process.env.GOOGLE_SHEETS_API_KEY,
+      calendar: !!process.env.GOOGLE_CALENDAR_API_KEY,
+      docs: !!process.env.GOOGLE_DOCS_API_KEY,
+      drive: !!process.env.GOOGLE_DRIVE_API_KEY,
+      maps: !!process.env.GOOGLE_MAPS_API_KEY,
+      telegram: !!process.env.TELEGRAM_API_KEY,
+    };
+    const connStatus = Object.entries(connected)
+      .map(([k, v]) => `${k}:${v ? "✅" : "❌ not connected"}`)
+      .join(", ");
+
     const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
 Skills: ${skills}
 ${emp.description ? `About you: ${emp.description}` : ""}
+
+Connected integrations: ${connStatus}
 
 How you work:
 - You are proactive. When the user gives a task, just DO it and report results crisply.
 - Reply like a senior employee texting an update: 2-6 sentences, markdown allowed.
 - ALWAYS format every URL as a clickable markdown link like [Page Title](https://example.com). NEVER paste a bare URL — the user is on mobile and needs to tap.
-- You have these tools (ENABLED):
-  • web_search — FAST/LIGHT search. Use for quick lookups, simple facts, addresses, phone numbers, single-shot questions.
-  • web_scrape — FAST/LIGHT scrape of one URL (basic HTML text).
-  • deep_search — HEAVY research search (Firecrawl). Use ONLY for hard tasks: market research, multi-source analysis, competitor study, JS-heavy sites, when web_search results are weak or blocked. Costs credits — don't use casually.
-  • deep_scrape — HEAVY scrape (Firecrawl, renders JS, clean markdown). Use ONLY when web_scrape fails / returns junk, or for JS-heavy pages (LinkedIn, dashboards, SPAs). Costs credits.
-  • make_pdf — generate a downloadable PDF document. ONLY use when the user explicitly asks for a PDF / document / report file. After calling, share the returned url as [Download PDF](url) — a tappable link.
-- Default to the LIGHT tools first. Escalate to deep_* only if the light tool's result is insufficient OR the task is clearly heavy research.
-- After using a tool, synthesize the result for the user and cite sources as clickable [Title](url) links.
+- Tools available:
+  • web_search / web_scrape — FAST/LIGHT. Use first for quick lookups & basic pages.
+  • deep_search / deep_scrape — HEAVY (Firecrawl). Use ONLY for hard research, JS-heavy sites, when light tools fail. Costs credits.
+  • make_pdf — generate a PDF. ONLY when user asks for a doc/report file. Share as [Download PDF](url).
+  • gmail_send / gmail_list — send & read emails via the user's Gmail.
+  • sheets_read / sheets_append — read & append rows in a Google Sheet (need spreadsheetId).
+  • calendar_create_event / calendar_list_events — manage Google Calendar.
+  • gdocs_create — create a new Google Doc with content.
+  • gmaps_search — find places, addresses, phone numbers via Google Maps.
+  • telegram_send — send a Telegram message to a chat_id.
+- If a tool needs a connection that is ❌ not connected, tell the user clearly: "I need access to <X> — please connect it from Cloud → Connectors, then ask me again." Don't try to call it.
+- For lead-generation tasks: use deep_search/web_search to find leads (name, email, company, website) → present as a list → then offer to email them via gmail_send or save to a sheet via sheets_append.
+- After using a tool, synthesize results crisply and cite sources as clickable [Title](url) links.
 - Never say you're an AI model. Stay in character as ${emp.role_title}.`;
 
     const key = process.env.LOVABLE_API_KEY;
@@ -313,6 +384,171 @@ How you work:
           }
         },
       }),
+      gmail_send: tool({
+        description:
+          "Send an email via the user's Gmail. Use when the user asks to send/reply/email someone.",
+        inputSchema: z.object({
+          to: z.string().min(3).max(500),
+          subject: z.string().min(1).max(300),
+          body: z.string().min(1).max(10000),
+          cc: z.string().max(500).optional(),
+          bcc: z.string().max(500).optional(),
+        }),
+        execute: async ({ to, subject, body, cc, bcc }) => {
+          const raw = buildRawEmail(to, subject, body, cc, bcc);
+          return gatewayCall("GOOGLE_MAIL_API_KEY", "/google_mail/gmail/v1/users/me/messages/send", {
+            method: "POST",
+            body: { raw },
+          });
+        },
+      }),
+      gmail_list: tool({
+        description:
+          "List recent Gmail messages. Optional `q` is a Gmail search query (e.g. 'is:unread', 'from:foo@bar.com').",
+        inputSchema: z.object({
+          q: z.string().max(300).optional(),
+          maxResults: z.number().int().min(1).max(25).optional(),
+        }),
+        execute: async ({ q, maxResults }) => {
+          const params = new URLSearchParams();
+          if (q) params.set("q", q);
+          params.set("maxResults", String(maxResults ?? 10));
+          return gatewayCall(
+            "GOOGLE_MAIL_API_KEY",
+            `/google_mail/gmail/v1/users/me/messages?${params.toString()}`,
+          );
+        },
+      }),
+      sheets_read: tool({
+        description: "Read values from a Google Sheet. Range is A1 notation, e.g. 'Sheet1!A1:D50'.",
+        inputSchema: z.object({
+          spreadsheetId: z.string().min(10).max(120),
+          range: z.string().min(1).max(120),
+        }),
+        execute: async ({ spreadsheetId, range }) =>
+          gatewayCall(
+            "GOOGLE_SHEETS_API_KEY",
+            `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+          ),
+      }),
+      sheets_append: tool({
+        description:
+          "Append rows to a Google Sheet. `values` is a 2D array of rows. Range like 'Sheet1!A1'.",
+        inputSchema: z.object({
+          spreadsheetId: z.string().min(10).max(120),
+          range: z.string().min(1).max(120),
+          values: z.array(z.array(z.union([z.string(), z.number(), z.boolean()]))).min(1).max(200),
+        }),
+        execute: async ({ spreadsheetId, range, values }) =>
+          gatewayCall(
+            "GOOGLE_SHEETS_API_KEY",
+            `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
+            { method: "POST", body: { values } },
+          ),
+      }),
+      calendar_list_events: tool({
+        description: "List upcoming Google Calendar events on the primary calendar.",
+        inputSchema: z.object({
+          maxResults: z.number().int().min(1).max(25).optional(),
+          timeMin: z.string().optional(),
+        }),
+        execute: async ({ maxResults, timeMin }) => {
+          const params = new URLSearchParams();
+          params.set("maxResults", String(maxResults ?? 10));
+          params.set("singleEvents", "true");
+          params.set("orderBy", "startTime");
+          params.set("timeMin", timeMin ?? new Date().toISOString());
+          return gatewayCall(
+            "GOOGLE_CALENDAR_API_KEY",
+            `/google_calendar/calendar/v3/calendars/primary/events?${params.toString()}`,
+          );
+        },
+      }),
+      calendar_create_event: tool({
+        description:
+          "Create a Google Calendar event on the primary calendar. Times are ISO 8601 strings.",
+        inputSchema: z.object({
+          summary: z.string().min(1).max(300),
+          description: z.string().max(2000).optional(),
+          startISO: z.string(),
+          endISO: z.string(),
+          attendees: z.array(z.string()).max(20).optional(),
+        }),
+        execute: async ({ summary, description, startISO, endISO, attendees }) =>
+          gatewayCall(
+            "GOOGLE_CALENDAR_API_KEY",
+            "/google_calendar/calendar/v3/calendars/primary/events",
+            {
+              method: "POST",
+              body: {
+                summary,
+                description,
+                start: { dateTime: startISO },
+                end: { dateTime: endISO },
+                attendees: attendees?.map((email) => ({ email })),
+              },
+            },
+          ),
+      }),
+      gdocs_create: tool({
+        description:
+          "Create a new Google Doc with the given title and plain-text body. Returns the documentId and URL.",
+        inputSchema: z.object({
+          title: z.string().min(1).max(200),
+          body: z.string().min(1).max(20000),
+        }),
+        execute: async ({ title, body }) => {
+          const created = await gatewayCall(
+            "GOOGLE_DOCS_API_KEY",
+            "/google_docs/v1/documents",
+            { method: "POST", body: { title } },
+          );
+          try {
+            const doc = JSON.parse(created);
+            const docId = doc?.documentId;
+            if (!docId) return created;
+            await gatewayCall(
+              "GOOGLE_DOCS_API_KEY",
+              `/google_docs/v1/documents/${docId}:batchUpdate`,
+              {
+                method: "POST",
+                body: {
+                  requests: [{ insertText: { location: { index: 1 }, text: body } }],
+                },
+              },
+            );
+            return JSON.stringify({
+              documentId: docId,
+              url: `https://docs.google.com/document/d/${docId}/edit`,
+              title,
+            });
+          } catch {
+            return created;
+          }
+        },
+      }),
+      gmaps_search: tool({
+        description:
+          "Search Google Maps Places for a query (e.g. 'cafes in Mumbai'). Returns name, address, rating.",
+        inputSchema: z.object({ query: z.string().min(1).max(200) }),
+        execute: async ({ query }) =>
+          gatewayCall(
+            "GOOGLE_MAPS_API_KEY",
+            `/google_maps/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}`,
+          ),
+      }),
+      telegram_send: tool({
+        description: "Send a Telegram message to the given chat_id via the connected bot.",
+        inputSchema: z.object({
+          chat_id: z.union([z.string(), z.number()]),
+          text: z.string().min(1).max(4000),
+        }),
+        execute: async ({ chat_id, text }) =>
+          gatewayCall("TELEGRAM_API_KEY", "/telegram/sendMessage", {
+            method: "POST",
+            body: { chat_id, text, parse_mode: "HTML" },
+          }),
+      }),
     };
 
     const { text } = await generateText({
@@ -320,7 +556,7 @@ How you work:
       system,
       messages: data.messages,
       tools,
-      stopWhen: stepCountIs(6),
+      stopWhen: stepCountIs(8),
     });
 
     const reply = text.trim() || "Done.";

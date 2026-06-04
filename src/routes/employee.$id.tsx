@@ -59,10 +59,11 @@ function EmployeeProfilePage() {
         if (h.messages?.length) {
           setMessages(h.messages);
         } else if (data) {
+          const role = (data as any).role_title;
           setMessages([
             {
               role: "assistant",
-              content: `Hey! I'm your ${(data as any).role_title}. What should we tackle first?`,
+              content: `Hey! I'm your **${role}** 👋\n\nTo work at full power I use your connected tools — **Gmail**, **Google Sheets**, **Google Calendar**, **Google Docs**, **Google Drive**, **Google Maps** and **Telegram**.\n\nIf any of these aren't connected yet, link them from **Cloud → Connectors** and I'll pick them up automatically. ✅\n\nWhat should we tackle first?`,
             },
           ]);
         }
