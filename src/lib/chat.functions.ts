@@ -384,6 +384,171 @@ How you work:
           }
         },
       }),
+      gmail_send: tool({
+        description:
+          "Send an email via the user's Gmail. Use when the user asks to send/reply/email someone.",
+        inputSchema: z.object({
+          to: z.string().min(3).max(500),
+          subject: z.string().min(1).max(300),
+          body: z.string().min(1).max(10000),
+          cc: z.string().max(500).optional(),
+          bcc: z.string().max(500).optional(),
+        }),
+        execute: async ({ to, subject, body, cc, bcc }) => {
+          const raw = buildRawEmail(to, subject, body, cc, bcc);
+          return gatewayCall("GOOGLE_MAIL_API_KEY", "/google_mail/gmail/v1/users/me/messages/send", {
+            method: "POST",
+            body: { raw },
+          });
+        },
+      }),
+      gmail_list: tool({
+        description:
+          "List recent Gmail messages. Optional `q` is a Gmail search query (e.g. 'is:unread', 'from:foo@bar.com').",
+        inputSchema: z.object({
+          q: z.string().max(300).optional(),
+          maxResults: z.number().int().min(1).max(25).optional(),
+        }),
+        execute: async ({ q, maxResults }) => {
+          const params = new URLSearchParams();
+          if (q) params.set("q", q);
+          params.set("maxResults", String(maxResults ?? 10));
+          return gatewayCall(
+            "GOOGLE_MAIL_API_KEY",
+            `/google_mail/gmail/v1/users/me/messages?${params.toString()}`,
+          );
+        },
+      }),
+      sheets_read: tool({
+        description: "Read values from a Google Sheet. Range is A1 notation, e.g. 'Sheet1!A1:D50'.",
+        inputSchema: z.object({
+          spreadsheetId: z.string().min(10).max(120),
+          range: z.string().min(1).max(120),
+        }),
+        execute: async ({ spreadsheetId, range }) =>
+          gatewayCall(
+            "GOOGLE_SHEETS_API_KEY",
+            `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+          ),
+      }),
+      sheets_append: tool({
+        description:
+          "Append rows to a Google Sheet. `values` is a 2D array of rows. Range like 'Sheet1!A1'.",
+        inputSchema: z.object({
+          spreadsheetId: z.string().min(10).max(120),
+          range: z.string().min(1).max(120),
+          values: z.array(z.array(z.union([z.string(), z.number(), z.boolean()]))).min(1).max(200),
+        }),
+        execute: async ({ spreadsheetId, range, values }) =>
+          gatewayCall(
+            "GOOGLE_SHEETS_API_KEY",
+            `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
+            { method: "POST", body: { values } },
+          ),
+      }),
+      calendar_list_events: tool({
+        description: "List upcoming Google Calendar events on the primary calendar.",
+        inputSchema: z.object({
+          maxResults: z.number().int().min(1).max(25).optional(),
+          timeMin: z.string().optional(),
+        }),
+        execute: async ({ maxResults, timeMin }) => {
+          const params = new URLSearchParams();
+          params.set("maxResults", String(maxResults ?? 10));
+          params.set("singleEvents", "true");
+          params.set("orderBy", "startTime");
+          params.set("timeMin", timeMin ?? new Date().toISOString());
+          return gatewayCall(
+            "GOOGLE_CALENDAR_API_KEY",
+            `/google_calendar/calendar/v3/calendars/primary/events?${params.toString()}`,
+          );
+        },
+      }),
+      calendar_create_event: tool({
+        description:
+          "Create a Google Calendar event on the primary calendar. Times are ISO 8601 strings.",
+        inputSchema: z.object({
+          summary: z.string().min(1).max(300),
+          description: z.string().max(2000).optional(),
+          startISO: z.string(),
+          endISO: z.string(),
+          attendees: z.array(z.string()).max(20).optional(),
+        }),
+        execute: async ({ summary, description, startISO, endISO, attendees }) =>
+          gatewayCall(
+            "GOOGLE_CALENDAR_API_KEY",
+            "/google_calendar/calendar/v3/calendars/primary/events",
+            {
+              method: "POST",
+              body: {
+                summary,
+                description,
+                start: { dateTime: startISO },
+                end: { dateTime: endISO },
+                attendees: attendees?.map((email) => ({ email })),
+              },
+            },
+          ),
+      }),
+      gdocs_create: tool({
+        description:
+          "Create a new Google Doc with the given title and plain-text body. Returns the documentId and URL.",
+        inputSchema: z.object({
+          title: z.string().min(1).max(200),
+          body: z.string().min(1).max(20000),
+        }),
+        execute: async ({ title, body }) => {
+          const created = await gatewayCall(
+            "GOOGLE_DOCS_API_KEY",
+            "/google_docs/v1/documents",
+            { method: "POST", body: { title } },
+          );
+          try {
+            const doc = JSON.parse(created);
+            const docId = doc?.documentId;
+            if (!docId) return created;
+            await gatewayCall(
+              "GOOGLE_DOCS_API_KEY",
+              `/google_docs/v1/documents/${docId}:batchUpdate`,
+              {
+                method: "POST",
+                body: {
+                  requests: [{ insertText: { location: { index: 1 }, text: body } }],
+                },
+              },
+            );
+            return JSON.stringify({
+              documentId: docId,
+              url: `https://docs.google.com/document/d/${docId}/edit`,
+              title,
+            });
+          } catch {
+            return created;
+          }
+        },
+      }),
+      gmaps_search: tool({
+        description:
+          "Search Google Maps Places for a query (e.g. 'cafes in Mumbai'). Returns name, address, rating.",
+        inputSchema: z.object({ query: z.string().min(1).max(200) }),
+        execute: async ({ query }) =>
+          gatewayCall(
+            "GOOGLE_MAPS_API_KEY",
+            `/google_maps/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}`,
+          ),
+      }),
+      telegram_send: tool({
+        description: "Send a Telegram message to the given chat_id via the connected bot.",
+        inputSchema: z.object({
+          chat_id: z.union([z.string(), z.number()]),
+          text: z.string().min(1).max(4000),
+        }),
+        execute: async ({ chat_id, text }) =>
+          gatewayCall("TELEGRAM_API_KEY", "/telegram/sendMessage", {
+            method: "POST",
+            body: { chat_id, text, parse_mode: "HTML" },
+          }),
+      }),
     };
 
     const { text } = await generateText({
