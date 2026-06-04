@@ -149,6 +149,57 @@ async function firecrawlDeepSearch(query: string, limit = 6): Promise<string> {
   }
 }
 
+// --- Lovable Connector Gateway (Gmail, Sheets, Calendar, Docs, Drive, Maps, Telegram) ---
+const GATEWAY = "https://connector-gateway.lovable.dev";
+
+function connectorHeaders(connectorKey: string) {
+  const lovKey = process.env.LOVABLE_API_KEY;
+  const conKey = process.env[connectorKey];
+  if (!lovKey) return null;
+  if (!conKey) return null;
+  return {
+    Authorization: `Bearer ${lovKey}`,
+    "X-Connection-Api-Key": conKey,
+    "Content-Type": "application/json",
+  } as Record<string, string>;
+}
+
+async function gatewayCall(
+  connectorKey: string,
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<string> {
+  const headers = connectorHeaders(connectorKey);
+  if (!headers) return `[connector ${connectorKey} not connected — ask user to link it]`;
+  try {
+    const res = await fetch(`${GATEWAY}${path}`, {
+      method: init.method ?? "GET",
+      headers,
+      body: init.body ? JSON.stringify(init.body) : undefined,
+    });
+    const text = await res.text();
+    if (!res.ok) return `[gateway ${res.status}: ${text.slice(0, 500)}]`;
+    return text.slice(0, 8000);
+  } catch (e: any) {
+    return `[gateway error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+// Gmail
+function buildRawEmail(to: string, subject: string, body: string, cc?: string, bcc?: string): string {
+  const lines = [`To: ${to}`];
+  if (cc) lines.push(`Cc: ${cc}`);
+  if (bcc) lines.push(`Bcc: ${bcc}`);
+  lines.push(`Subject: ${subject}`, 'Content-Type: text/plain; charset="UTF-8"', "", body);
+  const raw = lines.join("\r\n");
+  // base64url
+  return Buffer.from(raw, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
 
 export const chatWithEmployee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
