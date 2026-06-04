@@ -88,6 +88,68 @@ async function webSearch(query: string, limit = 5): Promise<string> {
   }
 }
 
+// --- Firecrawl (used ONLY for heavy / deep tasks) ---
+const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
+
+async function firecrawlDeepScrape(url: string): Promise<string> {
+  const key = process.env.FIRECRAWL_API_KEY;
+  if (!key) return "[firecrawl not configured]";
+  try {
+    const res = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url,
+        formats: ["markdown"],
+        onlyMainContent: true,
+      }),
+    });
+    if (!res.ok) return `[firecrawl scrape failed ${res.status}]`;
+    const json: any = await res.json();
+    const md = json?.data?.markdown ?? json?.markdown ?? "";
+    const sourceURL = json?.data?.metadata?.sourceURL ?? url;
+    return JSON.stringify({ url: sourceURL, markdown: String(md).slice(0, 12000) });
+  } catch (e: any) {
+    return `[firecrawl scrape error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+async function firecrawlDeepSearch(query: string, limit = 6): Promise<string> {
+  const key = process.env.FIRECRAWL_API_KEY;
+  if (!key) return "[firecrawl not configured]";
+  try {
+    const res = await fetch(`${FIRECRAWL_BASE}/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query,
+        limit,
+        scrapeOptions: { formats: ["markdown"] },
+      }),
+    });
+    if (!res.ok) return `[firecrawl search failed ${res.status}]`;
+    const json: any = await res.json();
+    const raw = json?.data ?? json?.web ?? [];
+    const arr = Array.isArray(raw) ? raw : raw?.results ?? [];
+    const out = arr.slice(0, limit).map((r: any) => ({
+      title: r.title ?? r.metadata?.title ?? "",
+      url: r.url ?? r.metadata?.sourceURL ?? "",
+      description: r.description ?? r.snippet ?? "",
+      markdown: String(r.markdown ?? "").slice(0, 2500),
+    }));
+    return JSON.stringify(out);
+  } catch (e: any) {
+    return `[firecrawl search error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+
 export const chatWithEmployee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
