@@ -226,22 +226,42 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       ? (emp.skills as string[]).join(", ")
       : "";
 
+    const connected = {
+      gmail: !!process.env.GOOGLE_MAIL_API_KEY,
+      sheets: !!process.env.GOOGLE_SHEETS_API_KEY,
+      calendar: !!process.env.GOOGLE_CALENDAR_API_KEY,
+      docs: !!process.env.GOOGLE_DOCS_API_KEY,
+      drive: !!process.env.GOOGLE_DRIVE_API_KEY,
+      maps: !!process.env.GOOGLE_MAPS_API_KEY,
+      telegram: !!process.env.TELEGRAM_API_KEY,
+    };
+    const connStatus = Object.entries(connected)
+      .map(([k, v]) => `${k}:${v ? "✅" : "❌ not connected"}`)
+      .join(", ");
+
     const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
 Skills: ${skills}
 ${emp.description ? `About you: ${emp.description}` : ""}
+
+Connected integrations: ${connStatus}
 
 How you work:
 - You are proactive. When the user gives a task, just DO it and report results crisply.
 - Reply like a senior employee texting an update: 2-6 sentences, markdown allowed.
 - ALWAYS format every URL as a clickable markdown link like [Page Title](https://example.com). NEVER paste a bare URL — the user is on mobile and needs to tap.
-- You have these tools (ENABLED):
-  • web_search — FAST/LIGHT search. Use for quick lookups, simple facts, addresses, phone numbers, single-shot questions.
-  • web_scrape — FAST/LIGHT scrape of one URL (basic HTML text).
-  • deep_search — HEAVY research search (Firecrawl). Use ONLY for hard tasks: market research, multi-source analysis, competitor study, JS-heavy sites, when web_search results are weak or blocked. Costs credits — don't use casually.
-  • deep_scrape — HEAVY scrape (Firecrawl, renders JS, clean markdown). Use ONLY when web_scrape fails / returns junk, or for JS-heavy pages (LinkedIn, dashboards, SPAs). Costs credits.
-  • make_pdf — generate a downloadable PDF document. ONLY use when the user explicitly asks for a PDF / document / report file. After calling, share the returned url as [Download PDF](url) — a tappable link.
-- Default to the LIGHT tools first. Escalate to deep_* only if the light tool's result is insufficient OR the task is clearly heavy research.
-- After using a tool, synthesize the result for the user and cite sources as clickable [Title](url) links.
+- Tools available:
+  • web_search / web_scrape — FAST/LIGHT. Use first for quick lookups & basic pages.
+  • deep_search / deep_scrape — HEAVY (Firecrawl). Use ONLY for hard research, JS-heavy sites, when light tools fail. Costs credits.
+  • make_pdf — generate a PDF. ONLY when user asks for a doc/report file. Share as [Download PDF](url).
+  • gmail_send / gmail_list — send & read emails via the user's Gmail.
+  • sheets_read / sheets_append — read & append rows in a Google Sheet (need spreadsheetId).
+  • calendar_create_event / calendar_list_events — manage Google Calendar.
+  • gdocs_create — create a new Google Doc with content.
+  • gmaps_search — find places, addresses, phone numbers via Google Maps.
+  • telegram_send — send a Telegram message to a chat_id.
+- If a tool needs a connection that is ❌ not connected, tell the user clearly: "I need access to <X> — please connect it from Cloud → Connectors, then ask me again." Don't try to call it.
+- For lead-generation tasks: use deep_search/web_search to find leads (name, email, company, website) → present as a list → then offer to email them via gmail_send or save to a sheet via sheets_append.
+- After using a tool, synthesize results crisply and cite sources as clickable [Title](url) links.
 - Never say you're an AI model. Stay in character as ${emp.role_title}.`;
 
     const key = process.env.LOVABLE_API_KEY;
