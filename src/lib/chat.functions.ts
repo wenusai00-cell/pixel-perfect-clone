@@ -88,6 +88,68 @@ async function webSearch(query: string, limit = 5): Promise<string> {
   }
 }
 
+// --- Firecrawl (used ONLY for heavy / deep tasks) ---
+const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
+
+async function firecrawlDeepScrape(url: string): Promise<string> {
+  const key = process.env.FIRECRAWL_API_KEY;
+  if (!key) return "[firecrawl not configured]";
+  try {
+    const res = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url,
+        formats: ["markdown"],
+        onlyMainContent: true,
+      }),
+    });
+    if (!res.ok) return `[firecrawl scrape failed ${res.status}]`;
+    const json: any = await res.json();
+    const md = json?.data?.markdown ?? json?.markdown ?? "";
+    const sourceURL = json?.data?.metadata?.sourceURL ?? url;
+    return JSON.stringify({ url: sourceURL, markdown: String(md).slice(0, 12000) });
+  } catch (e: any) {
+    return `[firecrawl scrape error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+async function firecrawlDeepSearch(query: string, limit = 6): Promise<string> {
+  const key = process.env.FIRECRAWL_API_KEY;
+  if (!key) return "[firecrawl not configured]";
+  try {
+    const res = await fetch(`${FIRECRAWL_BASE}/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query,
+        limit,
+        scrapeOptions: { formats: ["markdown"] },
+      }),
+    });
+    if (!res.ok) return `[firecrawl search failed ${res.status}]`;
+    const json: any = await res.json();
+    const raw = json?.data ?? json?.web ?? [];
+    const arr = Array.isArray(raw) ? raw : raw?.results ?? [];
+    const out = arr.slice(0, limit).map((r: any) => ({
+      title: r.title ?? r.metadata?.title ?? "",
+      url: r.url ?? r.metadata?.sourceURL ?? "",
+      description: r.description ?? r.snippet ?? "",
+      markdown: String(r.markdown ?? "").slice(0, 2500),
+    }));
+    return JSON.stringify(out);
+  } catch (e: any) {
+    return `[firecrawl search error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+
 export const chatWithEmployee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -120,12 +182,15 @@ ${emp.description ? `About you: ${emp.description}` : ""}
 How you work:
 - You are proactive. When the user gives a task, just DO it and report results crisply.
 - Reply like a senior employee texting an update: 2-6 sentences, markdown allowed.
+- ALWAYS format every URL as a clickable markdown link like [Page Title](https://example.com). NEVER paste a bare URL — the user is on mobile and needs to tap.
 - You have these tools (ENABLED):
-  • web_search — search the open web for current info
-  • web_scrape — fetch the readable content of any URL (articles, product pages, maps results, docs, etc.)
-  • make_pdf — generate a downloadable PDF document. ONLY use this when the user explicitly asks for a PDF / document / report file. After calling, share the returned url in your reply as a markdown link like [Download PDF](url).
-- Use web tools whenever the task needs real-world info (news, prices, addresses, competitors, contact info, maps, research). Don't ask permission — just use them.
-- After using a tool, synthesize the result for the user. Cite URLs.
+  • web_search — FAST/LIGHT search. Use for quick lookups, simple facts, addresses, phone numbers, single-shot questions.
+  • web_scrape — FAST/LIGHT scrape of one URL (basic HTML text).
+  • deep_search — HEAVY research search (Firecrawl). Use ONLY for hard tasks: market research, multi-source analysis, competitor study, JS-heavy sites, when web_search results are weak or blocked. Costs credits — don't use casually.
+  • deep_scrape — HEAVY scrape (Firecrawl, renders JS, clean markdown). Use ONLY when web_scrape fails / returns junk, or for JS-heavy pages (LinkedIn, dashboards, SPAs). Costs credits.
+  • make_pdf — generate a downloadable PDF document. ONLY use when the user explicitly asks for a PDF / document / report file. After calling, share the returned url as [Download PDF](url) — a tappable link.
+- Default to the LIGHT tools first. Escalate to deep_* only if the light tool's result is insufficient OR the task is clearly heavy research.
+- After using a tool, synthesize the result for the user and cite sources as clickable [Title](url) links.
 - Never say you're an AI model. Stay in character as ${emp.role_title}.`;
 
     const key = process.env.LOVABLE_API_KEY;
@@ -136,7 +201,7 @@ How you work:
     const tools = {
       web_search: tool({
         description:
-          "Search the web for up-to-date information. Use for news, prices, businesses, maps results, competitors, anything current.",
+          "LIGHT web search (free). Use first for simple/fast lookups: facts, addresses, prices, single questions.",
         inputSchema: z.object({
           query: z.string().min(1).max(300),
           limit: z.number().int().min(1).max(10).optional(),
@@ -145,9 +210,24 @@ How you work:
       }),
       web_scrape: tool({
         description:
-          "Fetch the main readable content of a specific URL. Use after web_search to read a result, or when the user gives you a link.",
+          "LIGHT scrape (free) of one URL — plain HTML text. Use first when you need page content.",
         inputSchema: z.object({ url: z.string().url() }),
         execute: async ({ url }) => webScrape(url),
+      }),
+      deep_search: tool({
+        description:
+          "HEAVY research search via Firecrawl. Use ONLY for hard research tasks, market analysis, competitor study, or when web_search results are weak. Returns rich markdown from top results. Costs credits.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(300),
+          limit: z.number().int().min(1).max(10).optional(),
+        }),
+        execute: async ({ query, limit }) => firecrawlDeepSearch(query, limit ?? 6),
+      }),
+      deep_scrape: tool({
+        description:
+          "HEAVY scrape via Firecrawl — renders JS, returns clean markdown. Use ONLY when web_scrape failed, page is JS-heavy (SPA, LinkedIn, dashboards), or the user needs full structured content. Costs credits.",
+        inputSchema: z.object({ url: z.string().url() }),
+        execute: async ({ url }) => firecrawlDeepScrape(url),
       }),
       make_pdf: tool({
         description:
