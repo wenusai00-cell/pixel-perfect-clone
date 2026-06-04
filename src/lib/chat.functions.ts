@@ -556,7 +556,7 @@ How you work:
       system,
       messages: data.messages,
       tools,
-      stopWhen: stepCountIs(6),
+      stopWhen: stepCountIs(8),
     });
 
     const reply = text.trim() || "Done.";
