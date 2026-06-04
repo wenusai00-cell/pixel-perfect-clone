@@ -147,13 +147,22 @@ function EmployeeProfilePage() {
                     <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 to-purple-100 text-sm">
                       {emp.avatar_emoji ?? "🤖"}
                     </div>
-                    <div className="max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white/90 px-4 py-2.5 text-sm text-foreground/85 shadow-sm">
-                      {m.content}
+                    <div className="prose prose-sm max-w-[78%] break-words rounded-2xl rounded-bl-md bg-white/90 px-4 py-2.5 text-sm text-foreground/85 shadow-sm prose-p:my-1 prose-a:text-sky-600 prose-a:underline prose-a:font-medium prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-strong:text-foreground">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          a: ({ node, ...props }) => (
+                            <a {...props} target="_blank" rel="noopener noreferrer" />
+                          ),
+                        }}
+                      >
+                        {m.content}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 ) : (
                   <div key={i} className="flex items-end justify-end gap-2">
-                    <div className="max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-gradient-to-br from-sky-500 to-indigo-500 px-4 py-2.5 text-sm text-white shadow-sm">
+                    <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-gradient-to-br from-sky-500 to-indigo-500 px-4 py-2.5 text-sm text-white shadow-sm">
                       {m.content}
                     </div>
                   </div>
