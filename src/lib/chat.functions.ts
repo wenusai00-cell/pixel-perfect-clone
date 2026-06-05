@@ -88,6 +88,53 @@ async function webSearch(query: string, limit = 5): Promise<string> {
   }
 }
 
+async function getRichestPeople(count = 30): Promise<string> {
+  try {
+    const url = "https://www.forbes.com/real-time-billionaires/";
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+      redirect: "follow",
+    });
+    if (!res.ok) return `[rich list failed ${res.status}]`;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const raw = $("#__NEXT_DATA__").text();
+    if (!raw) return "[rich list data missing]";
+
+    const json = JSON.parse(raw);
+    const billionaires = json?.props?.pageProps?.data?.billionairesData?.billionaires;
+    if (!Array.isArray(billionaires) || billionaires.length === 0) {
+      return "[rich list data empty]";
+    }
+
+    const people = billionaires
+      .slice()
+      .sort((a: any, b: any) => Number(a.rank ?? a.position ?? 999999) - Number(b.rank ?? b.position ?? 999999))
+      .slice(0, Math.min(Math.max(count, 1), 100))
+      .map((p: any) => {
+        const finalWorth = Number(p.finalWorth ?? 0);
+        const worthInBillions = finalWorth > 1000 ? finalWorth / 1000 : finalWorth;
+        return {
+          rank: Number(p.rank ?? p.position),
+          name: p.personName ?? "Unknown",
+          netWorth: `$${worthInBillions.toFixed(1)}B`,
+          source: p.source ?? "",
+          country: p.countryOfCitizenship ?? "",
+          profile: p.uri ? `https://www.forbes.com/profile/${p.uri}/` : url,
+        };
+      });
+
+    return JSON.stringify({
+      source: "Forbes Real-Time Billionaires",
+      sourceUrl: url,
+      updated: json?.props?.pageProps?.data?.timestamp ?? null,
+      people,
+    });
+  } catch (e: any) {
+    return `[rich list error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
 // --- Firecrawl (used ONLY for heavy / deep tasks) ---
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
 
