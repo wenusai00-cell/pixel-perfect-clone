@@ -88,6 +88,53 @@ async function webSearch(query: string, limit = 5): Promise<string> {
   }
 }
 
+async function getRichestPeople(count = 30): Promise<string> {
+  try {
+    const url = "https://www.forbes.com/real-time-billionaires/";
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+      redirect: "follow",
+    });
+    if (!res.ok) return `[rich list failed ${res.status}]`;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const raw = $("#__NEXT_DATA__").text();
+    if (!raw) return "[rich list data missing]";
+
+    const json = JSON.parse(raw);
+    const billionaires = json?.props?.pageProps?.data?.billionairesData?.billionaires;
+    if (!Array.isArray(billionaires) || billionaires.length === 0) {
+      return "[rich list data empty]";
+    }
+
+    const people = billionaires
+      .slice()
+      .sort((a: any, b: any) => Number(a.rank ?? a.position ?? 999999) - Number(b.rank ?? b.position ?? 999999))
+      .slice(0, Math.min(Math.max(count, 1), 100))
+      .map((p: any) => {
+        const finalWorth = Number(p.finalWorth ?? 0);
+        const worthInBillions = finalWorth > 1000 ? finalWorth / 1000 : finalWorth;
+        return {
+          rank: Number(p.rank ?? p.position),
+          name: p.personName ?? "Unknown",
+          netWorth: `$${worthInBillions.toFixed(1)}B`,
+          source: p.source ?? "",
+          country: p.countryOfCitizenship ?? "",
+          profile: p.uri ? `https://www.forbes.com/profile/${p.uri}/` : url,
+        };
+      });
+
+    return JSON.stringify({
+      source: "Forbes Real-Time Billionaires",
+      sourceUrl: url,
+      updated: json?.props?.pageProps?.data?.timestamp ?? null,
+      people,
+    });
+  } catch (e: any) {
+    return `[rich list error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
 // --- Firecrawl (used ONLY for heavy / deep tasks) ---
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
 
@@ -252,10 +299,12 @@ How you work:
 - NEVER mention internal tool names (no "firecrawl", "cheerio", "deep_search", "web_scrape", "gateway", "API" etc.) to the user. Just deliver the answer. If you can't do something, say "I can't access that right now" — not "the tool failed".
 
 Internal tool routing (silent — never tell the user):
+- If the user asks for richest people/billionaires/top net-worth rankings (especially "30 richest person/people in the world"), call richest_people first and answer from it directly.
 - Light & fast lookups, single facts, basic HTML pages → use web_search / web_scrape first.
 - Deep research, multi-source analysis, competitor/market study, lead-gen at scale, JS-heavy sites (LinkedIn, SPAs, dashboards), or anything map/location/business-listings related → use deep_search / deep_scrape directly. Don't waste a step trying light tools first when the task is clearly heavy.
 - Maps/places/addresses/phone numbers → prefer gmaps_search if Google Maps is connected, otherwise deep_search.
 - If a light tool returns weak/empty results, silently retry with the deep one. Never narrate the retry.
+- If one source fails but the answer is common public knowledge, use another source/tool or your own knowledge and clearly label it as approximate; don't apologize or say tools are unavailable unless every practical path failed.
 - make_pdf only when the user explicitly asks for a document/report file. Share as [Download PDF](url).
 - gmail_send / gmail_list, sheets_read / sheets_append, calendar_create_event / calendar_list_events, gdocs_create, telegram_send — use whenever the task needs them.
 
@@ -271,6 +320,12 @@ Connection handling:
     const model = gateway("google/gemini-2.5-flash");
 
     const tools = {
+      richest_people: tool({
+        description:
+          "Get the current Forbes real-time richest people / billionaires ranking. Use this first for queries like '30 richest people in the world'.",
+        inputSchema: z.object({ count: z.number().int().min(1).max(100).optional() }),
+        execute: async ({ count }) => getRichestPeople(count ?? 30),
+      }),
       web_search: tool({
         description:
           "LIGHT web search (free). Use first for simple/fast lookups: facts, addresses, prices, single questions.",
