@@ -199,33 +199,70 @@ async function firecrawlDeepSearch(query: string, limit = 6): Promise<string> {
   }
 }
 
-// --- Lovable Connector Gateway (Gmail, Sheets, Calendar, Docs, Drive, Maps, Telegram) ---
+// --- Lovable Connector Gateway ---
+// Calls prefer the per-employee App User connection (each client connects
+// their own Gmail/Calendar/etc). Falls back to a workspace-level API key
+// env var when one exists, so older Gmail-only setups keep working.
 const GATEWAY = "https://connector-gateway.lovable.dev";
 
-function connectorHeaders(connectorKey: string) {
-  const lovKey = process.env.LOVABLE_API_KEY;
-  const conKey = process.env[connectorKey];
-  if (!lovKey) return null;
-  if (!conKey) return null;
-  return {
-    Authorization: `Bearer ${lovKey}`,
-    "X-Connection-Api-Key": conKey,
-    "Content-Type": "application/json",
-  } as Record<string, string>;
-}
+type ConnectionMap = Record<string, string | undefined>;
 
-async function gatewayCall(
-  connectorKey: string,
+async function connectorCall(
+  toolKey: string,
+  connectorId: string,
+  fallbackEnvKey: string,
   path: string,
+  connections: ConnectionMap,
   init: { method?: string; body?: unknown } = {},
 ): Promise<string> {
-  const headers = connectorHeaders(connectorKey);
-  if (!headers) return `[connector ${connectorKey} not connected — ask user to link it]`;
+  const method = init.method ?? "GET";
+  const bodyStr = init.body ? JSON.stringify(init.body) : undefined;
+
+  // Path under the connector (callAsAppUser prepends /<connectorId>).
+  // The shared `path` argument is the full gateway path like
+  // "/google_mail/gmail/v1/users/me/messages/send". Strip the connector
+  // prefix when routing via the app-user helper.
+  const prefix = `/${connectorId}`;
+  const userPath = path.startsWith(prefix) ? path.slice(prefix.length) : path;
+
+  // 1) Per-employee App User connection
+  const connectionId = connections[toolKey];
+  if (connectionId) {
+    try {
+      const res = await callAsAppUser({
+        gatewayBaseUrl: GATEWAY_BASE_URL,
+        connectionId,
+        connectorId,
+        path: userPath,
+        init: {
+          method,
+          headers: bodyStr ? { "Content-Type": "application/json" } : undefined,
+          body: bodyStr,
+        },
+      });
+      const text = await res.text();
+      if (!res.ok) return `[gateway ${res.status}: ${text.slice(0, 500)}]`;
+      return text.slice(0, 8000);
+    } catch (e: any) {
+      return `[gateway error: ${e?.message ?? "unknown"}]`;
+    }
+  }
+
+  // 2) Workspace-level connector API key (legacy)
+  const lovKey = process.env.LOVABLE_API_KEY;
+  const conKey = process.env[fallbackEnvKey];
+  if (!lovKey || !conKey) {
+    return `[connector ${connectorId} not connected — ask the user to connect ${connectorId} from the top of the chat]`;
+  }
   try {
     const res = await fetch(`${GATEWAY}${path}`, {
-      method: init.method ?? "GET",
-      headers,
-      body: init.body ? JSON.stringify(init.body) : undefined,
+      method,
+      headers: {
+        Authorization: `Bearer ${lovKey}`,
+        "X-Connection-Api-Key": conKey,
+        "Content-Type": "application/json",
+      },
+      body: bodyStr,
     });
     const text = await res.text();
     if (!res.ok) return `[gateway ${res.status}: ${text.slice(0, 500)}]`;
