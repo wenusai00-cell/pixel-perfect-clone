@@ -710,7 +710,7 @@ Connection handling:
       system,
       messages: data.messages,
       tools,
-      stopWhen: stepCountIs(8),
+      stopWhen: stepCountIs(12),
     });
 
     const reply = text.trim() || "Done.";
