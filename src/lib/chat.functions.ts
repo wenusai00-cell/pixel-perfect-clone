@@ -5,6 +5,9 @@ import * as cheerio from "cheerio";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { callAsAppUser } from "@/integrations/lovable/appUserConnector";
+
+const GATEWAY_BASE_URL = "https://connector-gateway.lovable.dev";
 
 const MessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
