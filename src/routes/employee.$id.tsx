@@ -1,12 +1,21 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Send, Paperclip, Mic, X, Activity, Clock } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Mic, X, Activity, Clock, Check, Plug } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { supabase } from "@/integrations/supabase/client";
 import { chatWithEmployee, loadChatHistory } from "@/lib/chat.functions";
+import {
+  getEmployeePermissions,
+  saveToolConnection,
+  startToolOAuth,
+} from "@/lib/connections.functions";
+import { getRequiredToolsFor, type ToolSpec } from "@/lib/employee-tools";
+import { connectAppUser } from "@/integrations/lovable/appUserConnectorClient";
 import skyImage from "@/assets/sky-clouds.jpg";
+
+const GATEWAY_BASE_URL = "https://connector-gateway.lovable.dev";
 
 export const Route = createFileRoute("/employee/$id")({
   component: EmployeeProfilePage,
@@ -31,15 +40,33 @@ function EmployeeProfilePage() {
   const navigate = useNavigate();
   const sendChat = useServerFn(chatWithEmployee);
   const loadHistory = useServerFn(loadChatHistory);
+  const fetchPerms = useServerFn(getEmployeePermissions);
+  const startOAuth = useServerFn(startToolOAuth);
+  const saveConnection = useServerFn(saveToolConnection);
 
   const [emp, setEmp] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSpecs, setShowSpecs] = useState(false);
 
+  const [grantedKeys, setGrantedKeys] = useState<Set<string>>(new Set());
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [connectingKey, setConnectingKey] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const requiredTools: ToolSpec[] = useMemo(() => {
+    if (!emp) return [];
+    return getRequiredToolsFor(emp.role_title, emp.skills ?? []);
+  }, [emp]);
+
+  const missingTools = useMemo(
+    () => requiredTools.filter((t) => !grantedKeys.has(t.key)),
+    [requiredTools, grantedKeys],
+  );
 
   useEffect(() => {
     (async () => {
@@ -54,6 +81,17 @@ function EmployeeProfilePage() {
         .eq("id", id)
         .single();
       if (data) setEmp(data as any);
+
+      try {
+        const perms = await fetchPerms({ data: { employee_id: id } });
+        const granted = new Set(
+          perms.permissions.filter((p) => p.granted).map((p) => p.key),
+        );
+        setGrantedKeys(granted);
+      } catch {
+        // ignore
+      }
+
       try {
         const h = await loadHistory({ data: { employee_id: id } });
         if (h.messages?.length) {
@@ -63,7 +101,7 @@ function EmployeeProfilePage() {
           setMessages([
             {
               role: "assistant",
-              content: `Hey! I'm your **${role}** 👋\n\nTo work at full power I use your connected tools — **Gmail**, **Google Sheets**, **Google Calendar**, **Google Docs**, **Google Drive**, **Google Maps** and **Telegram**.\n\nIf any of these aren't connected yet, link them from **Cloud → Connectors** and I'll pick them up automatically. ✅\n\nWhat should we tackle first?`,
+              content: `Hey! I'm your **${role}** 👋 What should we tackle first?`,
             },
           ]);
         }
@@ -72,11 +110,57 @@ function EmployeeProfilePage() {
       }
       setLoading(false);
     })();
-  }, [id, navigate, loadHistory]);
+  }, [id, navigate, loadHistory, fetchPerms]);
+
+  // Open the connect modal automatically the first time an employee is opened
+  // with missing required tools.
+  useEffect(() => {
+    if (!loading && emp && missingTools.length > 0) {
+      setShowConnectModal(true);
+    }
+  }, [loading, emp, missingTools.length]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  async function handleConnect(tool: ToolSpec) {
+    setConnectError(null);
+    setConnectingKey(tool.key);
+    try {
+      const result = await connectAppUser({
+        connectorId: tool.connectorId,
+        gatewayBaseUrl: GATEWAY_BASE_URL,
+        start: async (targetOrigin) => {
+          const res = await startOAuth({
+            data: {
+              employee_id: id,
+              tool_key: tool.key,
+              target_origin: targetOrigin,
+              return_url: window.location.href,
+            },
+          });
+          return { authorizationUrl: res.authorizationUrl };
+        },
+      });
+      if (!result.success || !result.connectionId) {
+        setConnectError(result.error ?? "Couldn't connect — please try again.");
+        return;
+      }
+      await saveConnection({
+        data: {
+          employee_id: id,
+          tool_key: tool.key,
+          connection_id: result.connectionId,
+        },
+      });
+      setGrantedKeys((prev) => new Set(prev).add(tool.key));
+    } catch (e: any) {
+      setConnectError(e?.message ?? "Couldn't connect — please try again.");
+    } finally {
+      setConnectingKey(null);
+    }
+  }
 
   async function handleSend() {
     const text = input.trim();
@@ -138,6 +222,18 @@ function EmployeeProfilePage() {
                 </div>
               </div>
             </button>
+            {requiredTools.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowConnectModal(true)}
+                className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-foreground/80 shadow-sm hover:bg-foreground/5"
+              >
+                <Plug className="h-3.5 w-3.5" />
+                {missingTools.length > 0
+                  ? `Connect (${missingTools.length})`
+                  : "Connected"}
+              </button>
+            )}
           </header>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
@@ -188,11 +284,7 @@ function EmployeeProfilePage() {
 
           <div className="border-t border-white/50 bg-white/70 p-3 backdrop-blur-xl">
             <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-full border border-foreground/10 bg-white px-3 py-2 shadow-sm">
-              <button
-                type="button"
-                disabled
-                className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/50 hover:bg-foreground/5"
-              >
+              <button type="button" disabled className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/50 hover:bg-foreground/5">
                 <Paperclip className="h-4 w-4" />
               </button>
               <input
@@ -209,11 +301,7 @@ function EmployeeProfilePage() {
                 disabled={sending}
                 className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/40 focus:outline-none disabled:opacity-60"
               />
-              <button
-                type="button"
-                disabled
-                className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/50 hover:bg-foreground/5"
-              >
+              <button type="button" disabled className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/50 hover:bg-foreground/5">
                 <Mic className="h-4 w-4" />
               </button>
               <button
@@ -226,6 +314,90 @@ function EmployeeProfilePage() {
               </button>
             </div>
           </div>
+
+          {showConnectModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center"
+              onClick={() => setShowConnectModal(false)}
+            >
+              <div
+                className="w-full max-w-md overflow-hidden rounded-t-3xl border border-white/60 bg-white shadow-2xl sm:rounded-3xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="relative bg-gradient-to-br from-sky-100 to-purple-100 p-6 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectModal(false)}
+                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/70 hover:bg-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-inner">
+                    {emp.avatar_emoji ?? "🤖"}
+                  </div>
+                  <h2 className="mt-3 text-lg font-bold text-foreground">
+                    Give your {emp.role_title} access
+                  </h2>
+                  <p className="mt-1 text-xs text-foreground/60">
+                    Connect the tools below so I can actually do the work.
+                  </p>
+                </div>
+
+                <div className="space-y-2 p-4">
+                  {requiredTools.map((tool) => {
+                    const granted = grantedKeys.has(tool.key);
+                    const busy = connectingKey === tool.key;
+                    return (
+                      <div
+                        key={tool.key}
+                        className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-white p-3"
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-foreground/5 text-xl">
+                          {tool.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-foreground">
+                            {tool.label}
+                          </div>
+                          <div className="truncate text-[11px] text-foreground/60">
+                            {tool.reason}
+                          </div>
+                        </div>
+                        {granted ? (
+                          <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                            <Check className="h-3.5 w-3.5" /> Connected
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleConnect(tool)}
+                            disabled={busy}
+                            className="rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 px-4 py-1.5 text-xs font-semibold text-white shadow-sm disabled:opacity-60"
+                          >
+                            {busy ? "Connecting…" : "Connect"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {connectError && (
+                    <div className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                      {connectError}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectModal(false)}
+                    className="mt-2 w-full rounded-full bg-foreground/5 px-4 py-2 text-xs font-semibold text-foreground/70 hover:bg-foreground/10"
+                  >
+                    {missingTools.length === 0 ? "Done" : "I'll do this later"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showSpecs && (
             <div
