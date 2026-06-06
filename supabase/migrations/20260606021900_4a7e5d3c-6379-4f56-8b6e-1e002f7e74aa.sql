@@ -1,0 +1,1 @@
+ALTER TABLE public.employee_permissions ADD COLUMN IF NOT EXISTS connection_id text;

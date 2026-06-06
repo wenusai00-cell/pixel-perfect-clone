@@ -43,6 +43,7 @@ export type Database = {
       }
       employee_permissions: {
         Row: {
+          connection_id: string | null
           created_at: string
           employee_id: string
           granted: boolean
@@ -52,6 +53,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          connection_id?: string | null
           created_at?: string
           employee_id: string
           granted?: boolean
@@ -61,6 +63,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          connection_id?: string | null
           created_at?: string
           employee_id?: string
           granted?: boolean

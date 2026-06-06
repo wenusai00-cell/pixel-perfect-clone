@@ -5,6 +5,9 @@ import * as cheerio from "cheerio";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { callAsAppUser } from "@/integrations/lovable/appUserConnector";
+
+const GATEWAY_BASE_URL = "https://connector-gateway.lovable.dev";
 
 const MessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -196,33 +199,70 @@ async function firecrawlDeepSearch(query: string, limit = 6): Promise<string> {
   }
 }
 
-// --- Lovable Connector Gateway (Gmail, Sheets, Calendar, Docs, Drive, Maps, Telegram) ---
+// --- Lovable Connector Gateway ---
+// Calls prefer the per-employee App User connection (each client connects
+// their own Gmail/Calendar/etc). Falls back to a workspace-level API key
+// env var when one exists, so older Gmail-only setups keep working.
 const GATEWAY = "https://connector-gateway.lovable.dev";
 
-function connectorHeaders(connectorKey: string) {
-  const lovKey = process.env.LOVABLE_API_KEY;
-  const conKey = process.env[connectorKey];
-  if (!lovKey) return null;
-  if (!conKey) return null;
-  return {
-    Authorization: `Bearer ${lovKey}`,
-    "X-Connection-Api-Key": conKey,
-    "Content-Type": "application/json",
-  } as Record<string, string>;
-}
+type ConnectionMap = Record<string, string | undefined>;
 
-async function gatewayCall(
-  connectorKey: string,
+async function connectorCall(
+  toolKey: string,
+  connectorId: string,
+  fallbackEnvKey: string,
   path: string,
+  connections: ConnectionMap,
   init: { method?: string; body?: unknown } = {},
 ): Promise<string> {
-  const headers = connectorHeaders(connectorKey);
-  if (!headers) return `[connector ${connectorKey} not connected — ask user to link it]`;
+  const method = init.method ?? "GET";
+  const bodyStr = init.body ? JSON.stringify(init.body) : undefined;
+
+  // Path under the connector (callAsAppUser prepends /<connectorId>).
+  // The shared `path` argument is the full gateway path like
+  // "/google_mail/gmail/v1/users/me/messages/send". Strip the connector
+  // prefix when routing via the app-user helper.
+  const prefix = `/${connectorId}`;
+  const userPath = path.startsWith(prefix) ? path.slice(prefix.length) : path;
+
+  // 1) Per-employee App User connection
+  const connectionId = connections[toolKey];
+  if (connectionId) {
+    try {
+      const res = await callAsAppUser({
+        gatewayBaseUrl: GATEWAY_BASE_URL,
+        connectionId,
+        connectorId,
+        path: userPath,
+        init: {
+          method,
+          headers: bodyStr ? { "Content-Type": "application/json" } : undefined,
+          body: bodyStr,
+        },
+      });
+      const text = await res.text();
+      if (!res.ok) return `[gateway ${res.status}: ${text.slice(0, 500)}]`;
+      return text.slice(0, 8000);
+    } catch (e: any) {
+      return `[gateway error: ${e?.message ?? "unknown"}]`;
+    }
+  }
+
+  // 2) Workspace-level connector API key (legacy)
+  const lovKey = process.env.LOVABLE_API_KEY;
+  const conKey = process.env[fallbackEnvKey];
+  if (!lovKey || !conKey) {
+    return `[connector ${connectorId} not connected — ask the user to connect ${connectorId} from the top of the chat]`;
+  }
   try {
     const res = await fetch(`${GATEWAY}${path}`, {
-      method: init.method ?? "GET",
-      headers,
-      body: init.body ? JSON.stringify(init.body) : undefined,
+      method,
+      headers: {
+        Authorization: `Bearer ${lovKey}`,
+        "X-Connection-Api-Key": conKey,
+        "Content-Type": "application/json",
+      },
+      body: bodyStr,
     });
     const text = await res.text();
     if (!res.ok) return `[gateway ${res.status}: ${text.slice(0, 500)}]`;
@@ -273,13 +313,27 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       ? (emp.skills as string[]).join(", ")
       : "";
 
+    // Load per-employee App User connections (each tool the client connected)
+    const { data: permRows } = await supabase
+      .from("employee_permissions")
+      .select("permission_key, granted, connection_id")
+      .eq("employee_id", data.employee_id)
+      .eq("user_id", userId);
+
+    const connections: ConnectionMap = {};
+    for (const row of (permRows ?? []) as any[]) {
+      if (row.granted && row.connection_id) {
+        connections[row.permission_key as string] = row.connection_id as string;
+      }
+    }
+
     const connected = {
-      gmail: !!process.env.GOOGLE_MAIL_API_KEY,
-      sheets: !!process.env.GOOGLE_SHEETS_API_KEY,
-      calendar: !!process.env.GOOGLE_CALENDAR_API_KEY,
-      docs: !!process.env.GOOGLE_DOCS_API_KEY,
-      drive: !!process.env.GOOGLE_DRIVE_API_KEY,
-      maps: !!process.env.GOOGLE_MAPS_API_KEY,
+      gmail: !!connections.gmail || !!process.env.GOOGLE_MAIL_API_KEY,
+      sheets: !!connections.google_sheets || !!process.env.GOOGLE_SHEETS_API_KEY,
+      calendar: !!connections.google_calendar || !!process.env.GOOGLE_CALENDAR_API_KEY,
+      docs: !!connections.google_docs || !!process.env.GOOGLE_DOCS_API_KEY,
+      drive: !!connections.google_drive || !!process.env.GOOGLE_DRIVE_API_KEY,
+      maps: !!connections.google_maps || !!process.env.GOOGLE_MAPS_API_KEY,
       telegram: !!process.env.TELEGRAM_API_KEY,
     };
     const connStatus = Object.entries(connected)
@@ -297,19 +351,19 @@ How you work:
 - Reply like a senior employee texting an update: 2-6 sentences, markdown allowed. Hindi/Hinglish if the user writes in Hindi/Hinglish.
 - ALWAYS format every URL as a clickable markdown link like [Page Title](https://example.com). NEVER paste a bare URL — the user is on mobile and needs to tap.
 - NEVER mention internal tool names (no "firecrawl", "cheerio", "deep_search", "web_scrape", "gateway", "API" etc.) to the user. Just deliver the answer. If you can't do something, say "I can't access that right now" — not "the tool failed".
+- **NEVER reply with an empty message.** If every tool fails or returns nothing useful, answer from your own training knowledge and add "(approximate — please verify)".
 
 Internal tool routing (silent — never tell the user):
-- If the user asks for richest people/billionaires/top net-worth rankings (especially "30 richest person/people in the world"), call richest_people first and answer from it directly.
+- If the user asks for richest people/billionaires/top net-worth rankings, call richest_people first and answer from it.
+- For **"top N <places> in <city>"** style queries (gyms, restaurants, cafes, salons, dentists, schools, hospitals etc.): call gmaps_search first. If it returns "[connector ... not connected ...]" or empty, immediately fall back to deep_search with the same query. Either way, **always return a numbered list of at least N items** with name, neighborhood/address, and (if available) rating. Never reply "I can't find any" — pull from your own knowledge if both tools fail.
 - Light & fast lookups, single facts, basic HTML pages → use web_search / web_scrape first.
-- Deep research, multi-source analysis, competitor/market study, lead-gen at scale, JS-heavy sites (LinkedIn, SPAs, dashboards), or anything map/location/business-listings related → use deep_search / deep_scrape directly. Don't waste a step trying light tools first when the task is clearly heavy.
-- Maps/places/addresses/phone numbers → prefer gmaps_search if Google Maps is connected, otherwise deep_search.
+- Deep research, multi-source analysis, competitor/market study, lead-gen at scale, JS-heavy sites (LinkedIn, SPAs, dashboards) → use deep_search / deep_scrape directly.
 - If a light tool returns weak/empty results, silently retry with the deep one. Never narrate the retry.
-- If one source fails but the answer is common public knowledge, use another source/tool or your own knowledge and clearly label it as approximate; don't apologize or say tools are unavailable unless every practical path failed.
 - make_pdf only when the user explicitly asks for a document/report file. Share as [Download PDF](url).
 - gmail_send / gmail_list, sheets_read / sheets_append, calendar_create_event / calendar_list_events, gdocs_create, telegram_send — use whenever the task needs them.
 
 Connection handling:
-- If a task needs an integration that's ❌ not connected, say briefly: "I need access to <X> — connect it from Cloud → Connectors and I'll do it." Don't attempt the call.
+- If a task needs an integration that's ❌ not connected, say briefly: "I need access to <X> — tap **Connect** at the top to enable it." Don't attempt the call.
 - For lead-gen: find leads (name, email, company, website) → present as a clean list → then offer to email them or save to a sheet.
 - After any research, synthesize crisply and cite sources as clickable [Title](url) links.
 - Never say you're an AI model. Stay in character as ${emp.role_title}.`;
@@ -452,10 +506,14 @@ Connection handling:
         }),
         execute: async ({ to, subject, body, cc, bcc }) => {
           const raw = buildRawEmail(to, subject, body, cc, bcc);
-          return gatewayCall("GOOGLE_MAIL_API_KEY", "/google_mail/gmail/v1/users/me/messages/send", {
-            method: "POST",
-            body: { raw },
-          });
+          return connectorCall(
+            "gmail",
+            "google_mail",
+            "GOOGLE_MAIL_API_KEY",
+            "/google_mail/gmail/v1/users/me/messages/send",
+            connections,
+            { method: "POST", body: { raw } },
+          );
         },
       }),
       gmail_list: tool({
@@ -469,9 +527,12 @@ Connection handling:
           const params = new URLSearchParams();
           if (q) params.set("q", q);
           params.set("maxResults", String(maxResults ?? 10));
-          return gatewayCall(
+          return connectorCall(
+            "gmail",
+            "google_mail",
             "GOOGLE_MAIL_API_KEY",
             `/google_mail/gmail/v1/users/me/messages?${params.toString()}`,
+            connections,
           );
         },
       }),
@@ -482,9 +543,12 @@ Connection handling:
           range: z.string().min(1).max(120),
         }),
         execute: async ({ spreadsheetId, range }) =>
-          gatewayCall(
+          connectorCall(
+            "google_sheets",
+            "google_sheets",
             "GOOGLE_SHEETS_API_KEY",
             `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+            connections,
           ),
       }),
       sheets_append: tool({
@@ -496,9 +560,12 @@ Connection handling:
           values: z.array(z.array(z.union([z.string(), z.number(), z.boolean()]))).min(1).max(200),
         }),
         execute: async ({ spreadsheetId, range, values }) =>
-          gatewayCall(
+          connectorCall(
+            "google_sheets",
+            "google_sheets",
             "GOOGLE_SHEETS_API_KEY",
             `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
+            connections,
             { method: "POST", body: { values } },
           ),
       }),
@@ -514,9 +581,12 @@ Connection handling:
           params.set("singleEvents", "true");
           params.set("orderBy", "startTime");
           params.set("timeMin", timeMin ?? new Date().toISOString());
-          return gatewayCall(
+          return connectorCall(
+            "google_calendar",
+            "google_calendar",
             "GOOGLE_CALENDAR_API_KEY",
             `/google_calendar/calendar/v3/calendars/primary/events?${params.toString()}`,
+            connections,
           );
         },
       }),
@@ -531,9 +601,12 @@ Connection handling:
           attendees: z.array(z.string()).max(20).optional(),
         }),
         execute: async ({ summary, description, startISO, endISO, attendees }) =>
-          gatewayCall(
+          connectorCall(
+            "google_calendar",
+            "google_calendar",
             "GOOGLE_CALENDAR_API_KEY",
             "/google_calendar/calendar/v3/calendars/primary/events",
+            connections,
             {
               method: "POST",
               body: {
@@ -554,18 +627,24 @@ Connection handling:
           body: z.string().min(1).max(20000),
         }),
         execute: async ({ title, body }) => {
-          const created = await gatewayCall(
+          const created = await connectorCall(
+            "google_docs",
+            "google_docs",
             "GOOGLE_DOCS_API_KEY",
             "/google_docs/v1/documents",
+            connections,
             { method: "POST", body: { title } },
           );
           try {
             const doc = JSON.parse(created);
             const docId = doc?.documentId;
             if (!docId) return created;
-            await gatewayCall(
+            await connectorCall(
+              "google_docs",
+              "google_docs",
               "GOOGLE_DOCS_API_KEY",
               `/google_docs/v1/documents/${docId}:batchUpdate`,
+              connections,
               {
                 method: "POST",
                 body: {
@@ -585,12 +664,15 @@ Connection handling:
       }),
       gmaps_search: tool({
         description:
-          "Search Google Maps Places for a query (e.g. 'cafes in Mumbai'). Returns name, address, rating.",
+          "Search Google Maps Places for a query (e.g. 'top 10 gyms in New York', 'cafes in Mumbai'). Returns name, address, rating. If this returns '[connector ... not connected]', the caller MUST fall back to deep_search with the same query.",
         inputSchema: z.object({ query: z.string().min(1).max(200) }),
         execute: async ({ query }) =>
-          gatewayCall(
+          connectorCall(
+            "google_maps",
+            "google_maps",
             "GOOGLE_MAPS_API_KEY",
             `/google_maps/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}`,
+            connections,
           ),
       }),
       telegram_send: tool({
@@ -599,11 +681,27 @@ Connection handling:
           chat_id: z.union([z.string(), z.number()]),
           text: z.string().min(1).max(4000),
         }),
-        execute: async ({ chat_id, text }) =>
-          gatewayCall("TELEGRAM_API_KEY", "/telegram/sendMessage", {
-            method: "POST",
-            body: { chat_id, text, parse_mode: "HTML" },
-          }),
+        execute: async ({ chat_id, text }) => {
+          // Telegram bot uses a single workspace bot token — no per-user OAuth.
+          const lovKey = process.env.LOVABLE_API_KEY;
+          const conKey = process.env.TELEGRAM_API_KEY;
+          if (!lovKey || !conKey) return "[Telegram not connected]";
+          try {
+            const res = await fetch(`${GATEWAY}/telegram/sendMessage`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${lovKey}`,
+                "X-Connection-Api-Key": conKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ chat_id, text, parse_mode: "HTML" }),
+            });
+            const t = await res.text();
+            return res.ok ? t.slice(0, 4000) : `[telegram ${res.status}: ${t.slice(0, 400)}]`;
+          } catch (e: any) {
+            return `[telegram error: ${e?.message ?? "unknown"}]`;
+          }
+        },
       }),
     };
 
@@ -612,7 +710,7 @@ Connection handling:
       system,
       messages: data.messages,
       tools,
-      stopWhen: stepCountIs(8),
+      stopWhen: stepCountIs(12),
     });
 
     const reply = text.trim() || "Done.";
