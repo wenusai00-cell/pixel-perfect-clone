@@ -506,10 +506,14 @@ Connection handling:
         }),
         execute: async ({ to, subject, body, cc, bcc }) => {
           const raw = buildRawEmail(to, subject, body, cc, bcc);
-          return gatewayCall("GOOGLE_MAIL_API_KEY", "/google_mail/gmail/v1/users/me/messages/send", {
-            method: "POST",
-            body: { raw },
-          });
+          return connectorCall(
+            "gmail",
+            "google_mail",
+            "GOOGLE_MAIL_API_KEY",
+            "/google_mail/gmail/v1/users/me/messages/send",
+            connections,
+            { method: "POST", body: { raw } },
+          );
         },
       }),
       gmail_list: tool({
@@ -523,9 +527,12 @@ Connection handling:
           const params = new URLSearchParams();
           if (q) params.set("q", q);
           params.set("maxResults", String(maxResults ?? 10));
-          return gatewayCall(
+          return connectorCall(
+            "gmail",
+            "google_mail",
             "GOOGLE_MAIL_API_KEY",
             `/google_mail/gmail/v1/users/me/messages?${params.toString()}`,
+            connections,
           );
         },
       }),
@@ -536,9 +543,12 @@ Connection handling:
           range: z.string().min(1).max(120),
         }),
         execute: async ({ spreadsheetId, range }) =>
-          gatewayCall(
+          connectorCall(
+            "google_sheets",
+            "google_sheets",
             "GOOGLE_SHEETS_API_KEY",
             `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+            connections,
           ),
       }),
       sheets_append: tool({
@@ -550,9 +560,12 @@ Connection handling:
           values: z.array(z.array(z.union([z.string(), z.number(), z.boolean()]))).min(1).max(200),
         }),
         execute: async ({ spreadsheetId, range, values }) =>
-          gatewayCall(
+          connectorCall(
+            "google_sheets",
+            "google_sheets",
             "GOOGLE_SHEETS_API_KEY",
             `/google_sheets/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
+            connections,
             { method: "POST", body: { values } },
           ),
       }),
@@ -568,9 +581,12 @@ Connection handling:
           params.set("singleEvents", "true");
           params.set("orderBy", "startTime");
           params.set("timeMin", timeMin ?? new Date().toISOString());
-          return gatewayCall(
+          return connectorCall(
+            "google_calendar",
+            "google_calendar",
             "GOOGLE_CALENDAR_API_KEY",
             `/google_calendar/calendar/v3/calendars/primary/events?${params.toString()}`,
+            connections,
           );
         },
       }),
@@ -585,9 +601,12 @@ Connection handling:
           attendees: z.array(z.string()).max(20).optional(),
         }),
         execute: async ({ summary, description, startISO, endISO, attendees }) =>
-          gatewayCall(
+          connectorCall(
+            "google_calendar",
+            "google_calendar",
             "GOOGLE_CALENDAR_API_KEY",
             "/google_calendar/calendar/v3/calendars/primary/events",
+            connections,
             {
               method: "POST",
               body: {
@@ -608,18 +627,24 @@ Connection handling:
           body: z.string().min(1).max(20000),
         }),
         execute: async ({ title, body }) => {
-          const created = await gatewayCall(
+          const created = await connectorCall(
+            "google_docs",
+            "google_docs",
             "GOOGLE_DOCS_API_KEY",
             "/google_docs/v1/documents",
+            connections,
             { method: "POST", body: { title } },
           );
           try {
             const doc = JSON.parse(created);
             const docId = doc?.documentId;
             if (!docId) return created;
-            await gatewayCall(
+            await connectorCall(
+              "google_docs",
+              "google_docs",
               "GOOGLE_DOCS_API_KEY",
               `/google_docs/v1/documents/${docId}:batchUpdate`,
+              connections,
               {
                 method: "POST",
                 body: {
@@ -639,12 +664,15 @@ Connection handling:
       }),
       gmaps_search: tool({
         description:
-          "Search Google Maps Places for a query (e.g. 'cafes in Mumbai'). Returns name, address, rating.",
+          "Search Google Maps Places for a query (e.g. 'top 10 gyms in New York', 'cafes in Mumbai'). Returns name, address, rating. If this returns '[connector ... not connected]', the caller MUST fall back to deep_search with the same query.",
         inputSchema: z.object({ query: z.string().min(1).max(200) }),
         execute: async ({ query }) =>
-          gatewayCall(
+          connectorCall(
+            "google_maps",
+            "google_maps",
             "GOOGLE_MAPS_API_KEY",
             `/google_maps/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}`,
+            connections,
           ),
       }),
       telegram_send: tool({
@@ -653,11 +681,27 @@ Connection handling:
           chat_id: z.union([z.string(), z.number()]),
           text: z.string().min(1).max(4000),
         }),
-        execute: async ({ chat_id, text }) =>
-          gatewayCall("TELEGRAM_API_KEY", "/telegram/sendMessage", {
-            method: "POST",
-            body: { chat_id, text, parse_mode: "HTML" },
-          }),
+        execute: async ({ chat_id, text }) => {
+          // Telegram bot uses a single workspace bot token — no per-user OAuth.
+          const lovKey = process.env.LOVABLE_API_KEY;
+          const conKey = process.env.TELEGRAM_API_KEY;
+          if (!lovKey || !conKey) return "[Telegram not connected]";
+          try {
+            const res = await fetch(`${GATEWAY}/telegram/sendMessage`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${lovKey}`,
+                "X-Connection-Api-Key": conKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ chat_id, text, parse_mode: "HTML" }),
+            });
+            const t = await res.text();
+            return res.ok ? t.slice(0, 4000) : `[telegram ${res.status}: ${t.slice(0, 400)}]`;
+          } catch (e: any) {
+            return `[telegram error: ${e?.message ?? "unknown"}]`;
+          }
+        },
       }),
     };
 
