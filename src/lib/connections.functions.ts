@@ -45,10 +45,7 @@ export const startToolOAuth = createServerFn({ method: "POST" })
     const tool = TOOL_CATALOG[data.tool_key];
     if (!tool) throw new Error("Unknown tool");
 
-    const clientIdEnv =
-      tool.connectorId === "google_maps"
-        ? "GOOGLE_MAPS_APP_USER_CONNECTOR_CLIENT_ID"
-        : "GOOGLE_APP_USER_CONNECTOR_CLIENT_ID";
+    const clientIdEnv = "GOOGLE_APP_USER_CONNECTOR_CLIENT_ID";
     const connectorClientId = process.env[clientIdEnv];
     if (!connectorClientId) {
       throw new Error(
