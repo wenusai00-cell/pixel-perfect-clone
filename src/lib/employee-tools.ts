@@ -71,7 +71,7 @@ const RULES: Array<{ match: RegExp; tools: string[] }> = [
   { match: /(marketer|marketing|content|copy|writer|editor)/i, tools: ["gmail", "google_docs"] },
   { match: /(social\s*media|community)/i, tools: ["gmail"] },
   { match: /(operations|ops|admin|finance|book\s*keep|accountant|analyst|data)/i, tools: ["google_sheets", "gmail"] },
-  { match: /(lead\s*gen|prospect|local\s*seo|maps|field|territory|gtm|local\s*market)/i, tools: ["google_maps", "gmail", "google_sheets"] },
+  { match: /(lead\s*gen|prospect|local\s*seo|maps|field|territory|gtm|local\s*market)/i, tools: ["gmail", "google_sheets"] },
   { match: /(research|seo|analyst)/i, tools: [] }, // web tools are built-in, no connect needed
   { match: /(designer|developer|engineer|product)/i, tools: ["google_docs"] },
 ];
