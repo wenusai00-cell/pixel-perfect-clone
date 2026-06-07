@@ -61,14 +61,6 @@ export const TOOL_CATALOG: Record<string, ToolSpec> = {
     reason: "to save and fetch files",
     icon: "💾",
   },
-  google_maps: {
-    key: "google_maps",
-    connectorId: "google_maps",
-    scopes: [],
-    label: "Google Maps",
-    reason: "to find places, addresses and local businesses",
-    icon: "📍",
-  },
 };
 
 const RULES: Array<{ match: RegExp; tools: string[] }> = [
