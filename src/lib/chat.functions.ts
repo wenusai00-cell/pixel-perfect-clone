@@ -716,19 +716,6 @@ Connection handling:
           }
         },
       }),
-      gmaps_search: tool({
-        description:
-          "Search Google Maps Places for a query (e.g. 'top 10 gyms in New York', 'cafes in Mumbai'). Returns name, address, rating. If this returns '[connector ... not connected]', the caller MUST fall back to deep_search with the same query.",
-        inputSchema: z.object({ query: z.string().min(1).max(200) }),
-        execute: async ({ query }) =>
-          connectorCall(
-            "google_maps",
-            "google_maps",
-            "GOOGLE_MAPS_API_KEY",
-            `/google_maps/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}`,
-            connections,
-          ),
-      }),
       telegram_send: tool({
         description: "Send a Telegram message to the given chat_id via the connected bot.",
         inputSchema: z.object({
