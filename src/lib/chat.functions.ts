@@ -63,31 +63,74 @@ async function webScrape(url: string): Promise<string> {
   }
 }
 
-async function webSearch(query: string, limit = 5): Promise<string> {
+// ---------------- Serper API (central search + places engine) ----------------
+// One API, one key. /search for organic web, /places for local businesses.
+// Dynamic page-looping: caller asks for N, we fetch ceil(N/10) pages (max 100).
+const SERPER_BASE = "https://google.serper.dev";
+
+async function serperPost(path: string, body: Record<string, unknown>): Promise<any> {
+  const key = process.env.SERPER_API_KEY;
+  if (!key) throw new Error("SERPER_API_KEY not configured");
+  const res = await fetch(`${SERPER_BASE}${path}`, {
+    method: "POST",
+    headers: { "X-API-KEY": key, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`serper ${res.status}: ${t.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+async function serperSearch(query: string, num: number): Promise<string> {
+  const want = Math.max(1, Math.min(num, 100));
+  const pages = Math.min(10, Math.ceil(want / 10));
   try {
-    // DuckDuckGo HTML endpoint — no key required
-    const u = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const res = await fetch(u, {
-      headers: { "User-Agent": UA, Accept: "text/html" },
-    });
-    if (!res.ok) return `[search failed ${res.status}]`;
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    const results: { title: string; url: string; snippet: string }[] = [];
-    $(".result").each((_, el) => {
-      if (results.length >= limit) return;
-      const a = $(el).find("a.result__a").first();
-      const title = a.text().trim();
-      let href = a.attr("href") ?? "";
-      // DuckDuckGo wraps urls in /l/?uddg=...
-      const m = href.match(/uddg=([^&]+)/);
-      if (m) href = decodeURIComponent(m[1]);
-      const snippet = $(el).find(".result__snippet").text().trim();
-      if (title && href) results.push({ title, url: href, snippet });
-    });
-    return JSON.stringify(results);
+    const all: any[] = [];
+    for (let p = 1; p <= pages && all.length < want; p++) {
+      const json = await serperPost("/search", { q: query, num: 10, page: p });
+      const organic: any[] = json?.organic ?? [];
+      for (const r of organic) {
+        all.push({ title: r.title, url: r.link, snippet: r.snippet, source: r.source });
+        if (all.length >= want) break;
+      }
+      if (organic.length < 10) break;
+    }
+    return JSON.stringify({ query, count: all.length, results: all });
   } catch (e: any) {
     return `[search error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+async function serperPlaces(query: string, num: number, location?: string): Promise<string> {
+  const want = Math.max(1, Math.min(num, 100));
+  const pages = Math.min(10, Math.ceil(want / 20));
+  try {
+    const all: any[] = [];
+    for (let p = 1; p <= pages && all.length < want; p++) {
+      const body: Record<string, unknown> = { q: query, page: p };
+      if (location) body.location = location;
+      const json = await serperPost("/places", body);
+      const places: any[] = json?.places ?? [];
+      for (const r of places) {
+        all.push({
+          name: r.title,
+          address: r.address,
+          phone: r.phoneNumber,
+          website: r.website,
+          rating: r.rating,
+          reviews: r.ratingCount,
+          category: r.category,
+          cid: r.cid,
+        });
+        if (all.length >= want) break;
+      }
+      if (places.length === 0) break;
+    }
+    return JSON.stringify({ query, count: all.length, places: all });
+  } catch (e: any) {
+    return `[places error: ${e?.message ?? "unknown"}]`;
   }
 }
 
