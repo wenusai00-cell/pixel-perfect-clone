@@ -756,7 +756,7 @@ Account integrations (used only for account actions like sending email / booking
       system,
       messages: data.messages,
       tools,
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(25),
     });
 
     const reply = text.trim() || "Done.";
