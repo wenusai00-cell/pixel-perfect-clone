@@ -376,11 +376,10 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       calendar: !!connections.google_calendar || !!process.env.GOOGLE_CALENDAR_API_KEY,
       docs: !!connections.google_docs || !!process.env.GOOGLE_DOCS_API_KEY,
       drive: !!connections.google_drive || !!process.env.GOOGLE_DRIVE_API_KEY,
-      maps: !!connections.google_maps || !!process.env.GOOGLE_MAPS_API_KEY,
       telegram: !!process.env.TELEGRAM_API_KEY,
     };
     const connStatus = Object.entries(connected)
-      .map(([k, v]) => `${k}:${v ? "✅" : "❌ not connected"}`)
+      .map(([k, v]) => `${k}:${v ? "✅" : "❌"}`)
       .join(", ");
 
     const system = `You are "${emp.role_title}", a senior AI Employee on Vnus AI working autonomously for the client.
