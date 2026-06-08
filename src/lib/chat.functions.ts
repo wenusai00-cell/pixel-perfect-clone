@@ -425,33 +425,44 @@ Connection handling:
       }),
       web_search: tool({
         description:
-          "LIGHT web search (free). Use first for simple/fast lookups: facts, addresses, prices, single questions.",
+          "Primary web search via Serper (Google results). Use for any factual lookup, research, finding URLs, prices, articles, profiles, news. `num` is dynamic — pass whatever the user asked for (5, 25, 50, 100). Defaults to 10.",
         inputSchema: z.object({
           query: z.string().min(1).max(300),
-          limit: z.number().int().min(1).max(10).optional(),
+          num: z.number().int().min(1).max(100).optional(),
         }),
-        execute: async ({ query, limit }) => webSearch(query, limit ?? 5),
+        execute: async ({ query, num }) => serperSearch(query, num ?? 10),
+      }),
+      places_search: tool({
+        description:
+          "Local business / places search via Serper Places (replaces Google Maps). Use for ANY location-specific query: 'gyms in New York', 'restaurants in Miami', 'salons near Bandra'. Returns name, address, phone, website, rating. `num` is dynamic — match exactly what the user asked for. Never tell the user to connect Google Maps — this tool needs no user connection.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(200),
+          num: z.number().int().min(1).max(100).optional(),
+          location: z.string().max(120).optional(),
+        }),
+        execute: async ({ query, num, location }) =>
+          serperPlaces(query, num ?? 10, location),
       }),
       web_scrape: tool({
         description:
-          "LIGHT scrape (free) of one URL — plain HTML text. Use first when you need page content.",
+          "Light scrape (cheerio) of one URL — strips scripts/styles and returns plain text. Use to read an organic URL discovered via web_search.",
         inputSchema: z.object({ url: z.string().url() }),
         execute: async ({ url }) => webScrape(url),
       }),
-      deep_search: tool({
-        description:
-          "HEAVY research search via Firecrawl. Use ONLY for hard research tasks, market analysis, competitor study, or when web_search results are weak. Returns rich markdown from top results. Costs credits.",
-        inputSchema: z.object({
-          query: z.string().min(1).max(300),
-          limit: z.number().int().min(1).max(10).optional(),
-        }),
-        execute: async ({ query, limit }) => firecrawlDeepSearch(query, limit ?? 6),
-      }),
       deep_scrape: tool({
         description:
-          "HEAVY scrape via Firecrawl — renders JS, returns clean markdown. Use ONLY when web_scrape failed, page is JS-heavy (SPA, LinkedIn, dashboards), or the user needs full structured content. Costs credits.",
+          "Heavy scrape via Firecrawl — renders JavaScript, returns clean markdown. Use when web_scrape returned little/empty content, or for JS-heavy sites (SPAs, LinkedIn, dashboards), or when the user needs deep pricing/content extraction.",
         inputSchema: z.object({ url: z.string().url() }),
         execute: async ({ url }) => firecrawlDeepScrape(url),
+      }),
+      deep_search: tool({
+        description:
+          "Heavy multi-source research via Firecrawl search (scrapes top results into markdown). Use ONLY for hard market analysis or when web_search snippets are too shallow.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(300),
+          num: z.number().int().min(1).max(20).optional(),
+        }),
+        execute: async ({ query, num }) => firecrawlDeepSearch(query, num ?? 6),
       }),
       make_pdf: tool({
         description:
