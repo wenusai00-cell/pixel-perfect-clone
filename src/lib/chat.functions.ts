@@ -63,31 +63,74 @@ async function webScrape(url: string): Promise<string> {
   }
 }
 
-async function webSearch(query: string, limit = 5): Promise<string> {
+// ---------------- Serper API (central search + places engine) ----------------
+// One API, one key. /search for organic web, /places for local businesses.
+// Dynamic page-looping: caller asks for N, we fetch ceil(N/10) pages (max 100).
+const SERPER_BASE = "https://google.serper.dev";
+
+async function serperPost(path: string, body: Record<string, unknown>): Promise<any> {
+  const key = process.env.SERPER_API_KEY;
+  if (!key) throw new Error("SERPER_API_KEY not configured");
+  const res = await fetch(`${SERPER_BASE}${path}`, {
+    method: "POST",
+    headers: { "X-API-KEY": key, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`serper ${res.status}: ${t.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+async function serperSearch(query: string, num: number): Promise<string> {
+  const want = Math.max(1, Math.min(num, 100));
+  const pages = Math.min(10, Math.ceil(want / 10));
   try {
-    // DuckDuckGo HTML endpoint — no key required
-    const u = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const res = await fetch(u, {
-      headers: { "User-Agent": UA, Accept: "text/html" },
-    });
-    if (!res.ok) return `[search failed ${res.status}]`;
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    const results: { title: string; url: string; snippet: string }[] = [];
-    $(".result").each((_, el) => {
-      if (results.length >= limit) return;
-      const a = $(el).find("a.result__a").first();
-      const title = a.text().trim();
-      let href = a.attr("href") ?? "";
-      // DuckDuckGo wraps urls in /l/?uddg=...
-      const m = href.match(/uddg=([^&]+)/);
-      if (m) href = decodeURIComponent(m[1]);
-      const snippet = $(el).find(".result__snippet").text().trim();
-      if (title && href) results.push({ title, url: href, snippet });
-    });
-    return JSON.stringify(results);
+    const all: any[] = [];
+    for (let p = 1; p <= pages && all.length < want; p++) {
+      const json = await serperPost("/search", { q: query, num: 10, page: p });
+      const organic: any[] = json?.organic ?? [];
+      for (const r of organic) {
+        all.push({ title: r.title, url: r.link, snippet: r.snippet, source: r.source });
+        if (all.length >= want) break;
+      }
+      if (organic.length < 10) break;
+    }
+    return JSON.stringify({ query, count: all.length, results: all });
   } catch (e: any) {
     return `[search error: ${e?.message ?? "unknown"}]`;
+  }
+}
+
+async function serperPlaces(query: string, num: number, location?: string): Promise<string> {
+  const want = Math.max(1, Math.min(num, 100));
+  const pages = Math.min(10, Math.ceil(want / 20));
+  try {
+    const all: any[] = [];
+    for (let p = 1; p <= pages && all.length < want; p++) {
+      const body: Record<string, unknown> = { q: query, page: p };
+      if (location) body.location = location;
+      const json = await serperPost("/places", body);
+      const places: any[] = json?.places ?? [];
+      for (const r of places) {
+        all.push({
+          name: r.title,
+          address: r.address,
+          phone: r.phoneNumber,
+          website: r.website,
+          rating: r.rating,
+          reviews: r.ratingCount,
+          category: r.category,
+          cid: r.cid,
+        });
+        if (all.length >= want) break;
+      }
+      if (places.length === 0) break;
+    }
+    return JSON.stringify({ query, count: all.length, places: all });
+  } catch (e: any) {
+    return `[places error: ${e?.message ?? "unknown"}]`;
   }
 }
 
@@ -333,40 +376,45 @@ export const chatWithEmployee = createServerFn({ method: "POST" })
       calendar: !!connections.google_calendar || !!process.env.GOOGLE_CALENDAR_API_KEY,
       docs: !!connections.google_docs || !!process.env.GOOGLE_DOCS_API_KEY,
       drive: !!connections.google_drive || !!process.env.GOOGLE_DRIVE_API_KEY,
-      maps: !!connections.google_maps || !!process.env.GOOGLE_MAPS_API_KEY,
       telegram: !!process.env.TELEGRAM_API_KEY,
     };
     const connStatus = Object.entries(connected)
-      .map(([k, v]) => `${k}:${v ? "✅" : "❌ not connected"}`)
+      .map(([k, v]) => `${k}:${v ? "✅" : "❌"}`)
       .join(", ");
 
-    const system = `You are "${emp.role_title}", an AI Employee working for the user on Vnus AI.
+    const system = `You are "${emp.role_title}", a senior AI Employee on Vnus AI working autonomously for the client.
 Skills: ${skills}
 ${emp.description ? `About you: ${emp.description}` : ""}
 
-Connected integrations: ${connStatus}
+Account integrations (used only for account actions like sending email / booking calendar): ${connStatus}
 
-How you work:
-- You are proactive. When the user gives a task, just DO it and report the result crisply. Don't ask permission, don't explain which tool you'll use.
-- Reply like a senior employee texting an update: 2-6 sentences, markdown allowed. Hindi/Hinglish if the user writes in Hindi/Hinglish.
-- ALWAYS format every URL as a clickable markdown link like [Page Title](https://example.com). NEVER paste a bare URL — the user is on mobile and needs to tap.
-- NEVER mention internal tool names (no "firecrawl", "cheerio", "deep_search", "web_scrape", "gateway", "API" etc.) to the user. Just deliver the answer. If you can't do something, say "I can't access that right now" — not "the tool failed".
-- **NEVER reply with an empty message.** If every tool fails or returns nothing useful, answer from your own training knowledge and add "(approximate — please verify)".
+=== AUTOPILOT EXECUTION (non-negotiable) ===
+- NEVER pause to ask permission. NEVER say "should I…", "would you like me to…", "let me know if". Just execute and deliver.
+- NEVER tell the user to connect Google Maps, search APIs, or any background tool. All web search + business lookup runs silently via internal infrastructure that needs no client setup.
+- Only mention "Connect" for Gmail / Calendar / Sheets / Docs — and ONLY when the user asks for an account action (send email, schedule, write to a sheet) AND that specific tool shows ❌ above. For everything else, just do the work.
+- Chain tools autonomously. e.g. "Find 15 startups and their founders" → places_search/web_search first → web_scrape/deep_scrape on each result → return the merged table. Don't narrate intermediate steps.
 
-Internal tool routing (silent — never tell the user):
-- If the user asks for richest people/billionaires/top net-worth rankings, call richest_people first and answer from it.
-- For **"top N <places> in <city>"** style queries (gyms, restaurants, cafes, salons, dentists, schools, hospitals etc.): call gmaps_search first. If it returns "[connector ... not connected ...]" or empty, immediately fall back to deep_search with the same query. Either way, **always return a numbered list of at least N items** with name, neighborhood/address, and (if available) rating. Never reply "I can't find any" — pull from your own knowledge if both tools fail.
-- Light & fast lookups, single facts, basic HTML pages → use web_search / web_scrape first.
-- Deep research, multi-source analysis, competitor/market study, lead-gen at scale, JS-heavy sites (LinkedIn, SPAs, dashboards) → use deep_search / deep_scrape directly.
-- If a light tool returns weak/empty results, silently retry with the deep one. Never narrate the retry.
-- make_pdf only when the user explicitly asks for a document/report file. Share as [Download PDF](url).
-- gmail_send / gmail_list, sheets_read / sheets_append, calendar_create_event / calendar_list_events, gdocs_create, telegram_send — use whenever the task needs them.
+=== TOOL ROUTING (silent — never name tools to the user) ===
+- Location-specific / business lookup queries ("gyms in New York", "best restaurants in Miami", "salons near Bandra", "dentists in Delhi", "startups in Bangalore"): ALWAYS use places_search first. Pass the exact N the user asked for (5, 25, 50, 100). Returns name + address + phone + website + rating.
+- General web research, articles, profiles, news, prices, facts: web_search with dynamic num.
+- Read one specific URL: web_scrape. If it's JS-heavy or returns too little, retry once with deep_scrape.
+- Heavy multi-source market analysis: deep_search.
+- Forbes richest people / billionaires: richest_people.
+- Account actions: gmail_send / gmail_list / sheets_read / sheets_append / calendar_create_event / calendar_list_events / gdocs_create / telegram_send.
+- make_pdf only when the user explicitly asks for a downloadable document/report.
 
-Connection handling:
-- If a task needs an integration that's ❌ not connected, say briefly: "I need access to <X> — tap **Connect** at the top to enable it." Don't attempt the call.
-- For lead-gen: find leads (name, email, company, website) → present as a clean list → then offer to email them or save to a sheet.
-- After any research, synthesize crisply and cite sources as clickable [Title](url) links.
-- Never say you're an AI model. Stay in character as ${emp.role_title}.`;
+=== DYNAMIC QUANTITY ===
+- If the user specifies a number (5, 15, 50, "all"), pass that exact number to the tool (cap at 100 per call; loop tools if more is needed).
+- If no number specified, default to a high-quality top 10.
+- If the tool returns fewer than requested, present everything found — never refuse, never say "I cannot find". Add a brief note: "(showing X of Y requested — more weren't available)" only if meaningful.
+
+=== OUTPUT FORMAT ===
+- Lead lists, business directories, search results MUST be a clean markdown table with columns appropriate to the data (e.g. # | Name | Address | Phone | Website | Rating). For 1-3 items a bulleted list is fine.
+- Every URL is a clickable markdown link: [Page Title](https://example.com) — never bare URLs.
+- 2-6 sentence summary BEFORE the table when useful. Hindi/Hinglish if the user writes Hinglish.
+- NEVER name internal tools (no "serper", "firecrawl", "cheerio", "gateway", "API").
+- NEVER reply with an empty message. If literally everything fails, answer from training knowledge and tag "(approximate — please verify)".
+- Stay in character as ${emp.role_title}. Never say you are an AI model.`;
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("LOVABLE_API_KEY not configured");
@@ -382,33 +430,44 @@ Connection handling:
       }),
       web_search: tool({
         description:
-          "LIGHT web search (free). Use first for simple/fast lookups: facts, addresses, prices, single questions.",
+          "Primary web search via Serper (Google results). Use for any factual lookup, research, finding URLs, prices, articles, profiles, news. `num` is dynamic — pass whatever the user asked for (5, 25, 50, 100). Defaults to 10.",
         inputSchema: z.object({
           query: z.string().min(1).max(300),
-          limit: z.number().int().min(1).max(10).optional(),
+          num: z.number().int().min(1).max(100).optional(),
         }),
-        execute: async ({ query, limit }) => webSearch(query, limit ?? 5),
+        execute: async ({ query, num }) => serperSearch(query, num ?? 10),
+      }),
+      places_search: tool({
+        description:
+          "Local business / places search via Serper Places (replaces Google Maps). Use for ANY location-specific query: 'gyms in New York', 'restaurants in Miami', 'salons near Bandra'. Returns name, address, phone, website, rating. `num` is dynamic — match exactly what the user asked for. Never tell the user to connect Google Maps — this tool needs no user connection.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(200),
+          num: z.number().int().min(1).max(100).optional(),
+          location: z.string().max(120).optional(),
+        }),
+        execute: async ({ query, num, location }) =>
+          serperPlaces(query, num ?? 10, location),
       }),
       web_scrape: tool({
         description:
-          "LIGHT scrape (free) of one URL — plain HTML text. Use first when you need page content.",
+          "Light scrape (cheerio) of one URL — strips scripts/styles and returns plain text. Use to read an organic URL discovered via web_search.",
         inputSchema: z.object({ url: z.string().url() }),
         execute: async ({ url }) => webScrape(url),
       }),
-      deep_search: tool({
-        description:
-          "HEAVY research search via Firecrawl. Use ONLY for hard research tasks, market analysis, competitor study, or when web_search results are weak. Returns rich markdown from top results. Costs credits.",
-        inputSchema: z.object({
-          query: z.string().min(1).max(300),
-          limit: z.number().int().min(1).max(10).optional(),
-        }),
-        execute: async ({ query, limit }) => firecrawlDeepSearch(query, limit ?? 6),
-      }),
       deep_scrape: tool({
         description:
-          "HEAVY scrape via Firecrawl — renders JS, returns clean markdown. Use ONLY when web_scrape failed, page is JS-heavy (SPA, LinkedIn, dashboards), or the user needs full structured content. Costs credits.",
+          "Heavy scrape via Firecrawl — renders JavaScript, returns clean markdown. Use when web_scrape returned little/empty content, or for JS-heavy sites (SPAs, LinkedIn, dashboards), or when the user needs deep pricing/content extraction.",
         inputSchema: z.object({ url: z.string().url() }),
         execute: async ({ url }) => firecrawlDeepScrape(url),
+      }),
+      deep_search: tool({
+        description:
+          "Heavy multi-source research via Firecrawl search (scrapes top results into markdown). Use ONLY for hard market analysis or when web_search snippets are too shallow.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(300),
+          num: z.number().int().min(1).max(20).optional(),
+        }),
+        execute: async ({ query, num }) => firecrawlDeepSearch(query, num ?? 6),
       }),
       make_pdf: tool({
         description:
@@ -662,19 +721,6 @@ Connection handling:
           }
         },
       }),
-      gmaps_search: tool({
-        description:
-          "Search Google Maps Places for a query (e.g. 'top 10 gyms in New York', 'cafes in Mumbai'). Returns name, address, rating. If this returns '[connector ... not connected]', the caller MUST fall back to deep_search with the same query.",
-        inputSchema: z.object({ query: z.string().min(1).max(200) }),
-        execute: async ({ query }) =>
-          connectorCall(
-            "google_maps",
-            "google_maps",
-            "GOOGLE_MAPS_API_KEY",
-            `/google_maps/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}`,
-            connections,
-          ),
-      }),
       telegram_send: tool({
         description: "Send a Telegram message to the given chat_id via the connected bot.",
         inputSchema: z.object({
@@ -710,7 +756,7 @@ Connection handling:
       system,
       messages: data.messages,
       tools,
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(25),
     });
 
     const reply = text.trim() || "Done.";

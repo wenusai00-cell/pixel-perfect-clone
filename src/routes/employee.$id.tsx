@@ -112,13 +112,9 @@ function EmployeeProfilePage() {
     })();
   }, [id, navigate, loadHistory, fetchPerms]);
 
-  // Open the connect modal automatically the first time an employee is opened
-  // with missing required tools.
-  useEffect(() => {
-    if (!loading && emp && missingTools.length > 0) {
-      setShowConnectModal(true);
-    }
-  }, [loading, emp, missingTools.length]);
+  // Autopilot: never auto-halt the chat. The Connect button in the header
+  // stays available for when the user wants to enable account actions like
+  // sending email — but we don't force the modal open on entry.
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
